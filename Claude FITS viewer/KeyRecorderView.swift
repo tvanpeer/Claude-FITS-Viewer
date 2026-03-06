@@ -50,6 +50,12 @@ final class KeyRecorderNSView: NSView {
             return
         }
 
+        // Space bar
+        if event.keyCode == 49 {
+            onKeyCapture?(" ")
+            return
+        }
+
         // Accept printable characters (letters, digits, punctuation, symbols)
         if let char = event.charactersIgnoringModifiers?.first,
            char.isLetter || char.isNumber || char.isPunctuation || char.isSymbol {

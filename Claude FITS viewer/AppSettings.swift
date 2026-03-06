@@ -27,6 +27,11 @@ final class AppSettings {
     var undoKey: String = "u" {
         didSet { UserDefaults.standard.set(undoKey, forKey: "undoKey") }
     }
+    /// When true, the reject key acts as a toggle: rejects non-rejected frames and
+    /// undoes rejection for already-rejected frames. The separate undo key is then unused.
+    var useToggleReject: Bool = false {
+        didSet { UserDefaults.standard.set(useToggleReject, forKey: "useToggleReject") }
+    }
     var firstImageKey: String = "⇱" {
         didSet { UserDefaults.standard.set(firstImageKey, forKey: "firstImageKey") }
     }
@@ -85,6 +90,11 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(showInspector, forKey: "showInspector") }
     }
 
+    /// When true the app shows a stripped-down UI and skips all metrics computation.
+    var isSimpleMode: Bool = false {
+        didSet { UserDefaults.standard.set(isSimpleMode, forKey: "isSimpleMode") }
+    }
+
     var appearanceMode: AppearanceMode = .system {
         didSet { UserDefaults.standard.set(appearanceMode.rawValue, forKey: "appearanceMode") }
     }
@@ -97,6 +107,7 @@ final class AppSettings {
         if let v = UserDefaults.standard.string(forKey: "nextImageKey")  { nextImageKey  = v }
         if let v = UserDefaults.standard.string(forKey: "rejectKey")     { rejectKey     = v }
         if let v = UserDefaults.standard.string(forKey: "undoKey")       { undoKey       = v }
+        if let v = UserDefaults.standard.object(forKey: "useToggleReject") as? Bool { useToggleReject = v }
         if let v = UserDefaults.standard.string(forKey: "firstImageKey") { firstImageKey = v }
         if let v = UserDefaults.standard.string(forKey: "lastImageKey")  { lastImageKey  = v }
         // Rating keys
@@ -117,6 +128,7 @@ final class AppSettings {
         if let v = UserDefaults.standard.object(forKey: "computeSNR")          as? Bool { computeSNR          = v }
         if let v = UserDefaults.standard.object(forKey: "computeStarCount")    as? Bool { computeStarCount    = v }
         if let v = UserDefaults.standard.object(forKey: "showInspector")       as? Bool { showInspector       = v }
+        if let v = UserDefaults.standard.object(forKey: "isSimpleMode")       as? Bool { isSimpleMode       = v }
         if let raw = UserDefaults.standard.string(forKey: "appearanceMode"),
            let mode = AppearanceMode(rawValue: raw) { appearanceMode = mode }
     }
@@ -149,11 +161,19 @@ final class AppSettings {
         }
     }
 
-    // MARK: - Metrics config helper
+    // MARK: - Metrics config helpers
 
     var metricsConfig: MetricsConfig {
         MetricsConfig(computeFWHM: computeFWHM, computeEccentricity: computeEccentricity,
                       computeSNR: computeSNR, computeStarCount: computeStarCount)
+    }
+
+    /// Returns an all-disabled config in Simple mode so no star detection is triggered.
+    var effectiveMetricsConfig: MetricsConfig {
+        isSimpleMode
+            ? MetricsConfig(computeFWHM: false, computeEccentricity: false,
+                            computeSNR: false, computeStarCount: false)
+            : metricsConfig
     }
 
     // MARK: - Helpers
@@ -166,6 +186,7 @@ final class AppSettings {
         case "→": return .rightArrow
         case "⇱": return .home
         case "⇲": return .end
+        case " ": return KeyEquivalent(" ")
         default:
             if let char = string.first { return KeyEquivalent(char) }
             return fallback
@@ -177,9 +198,17 @@ final class AppSettings {
         case "↑", "↓", "←", "→": return keyString
         case "⇱": return "Home"
         case "⇲": return "End"
+        case " ":  return "Space"
         default: return keyString.uppercased()
         }
     }
+}
+
+// MARK: - Focused Values
+
+extension FocusedValues {
+    /// Exposes `AppSettings.isSimpleMode` as a Binding so menu commands can toggle it.
+    @Entry var simpleModeBinding: Binding<Bool>? = nil
 }
 
 // MARK: - AppearanceMode

@@ -23,6 +23,9 @@ struct Simple_Claude_fits_viewerApp: App {
             CommandGroup(after: .newItem) {
                 SettingsMenuCommand()
             }
+            CommandMenu("View") {
+                SimpleModeCommand()
+            }
         }
 
         Window("Settings", id: "settings") {
@@ -43,5 +46,18 @@ private struct SettingsMenuCommand: View {
             openWindow(id: "settings")
         }
         .keyboardShortcut(",", modifiers: .command)
+    }
+}
+
+/// Toggles Simple/Geek mode from the View menu using the focused window's binding.
+private struct SimpleModeCommand: View {
+    @FocusedValue(\.simpleModeBinding) var isSimpleMode
+
+    var body: some View {
+        Button(isSimpleMode?.wrappedValue == true ? "✓ Simple Mode" : "Simple Mode") {
+            isSimpleMode?.wrappedValue.toggle()
+        }
+        .disabled(isSimpleMode == nil)
+        .keyboardShortcut("m", modifiers: [.command, .shift])
     }
 }

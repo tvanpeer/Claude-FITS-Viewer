@@ -171,27 +171,7 @@ struct MetricsCalculator {
                                        width: width, height: height, config: config)
     }
 
-    /// Sendable wrapper for the read-only pixel buffer, allowing concurrent
-    /// per-star measurements to share the same memory without copying.
-    ///
-    /// Using `@unchecked Sendable` is safe here because:
-    ///   - All child tasks only read from the pointer — no writes occur.
-    ///   - The buffer's lifetime is guaranteed by the caller to outlast all tasks.
-    ///   - Multiple concurrent readers on the same memory is safe on all platforms.
-    private struct SharedPixels: @unchecked Sendable {
-        let buffer: UnsafeBufferPointer<Float>
-        let width:  Int
-        let height: Int
-    }
-
-    /// Measurement result for a single star candidate.
-    private struct StarMeasurement: Sendable {
-        let fwhm: Float
-        let ecc:  Float
-        let snr:  Float
-    }
-
-    /// Shared measurement stage: filters raw candidates, fits PSF models in parallel,
+    /// Shared measurement stage: filters raw candidates, fits PSF models sequentially,
     /// and assembles the final FrameMetrics. Called by both the GPU and CPU paths
     /// after their respective detection steps.
     ///
@@ -199,10 +179,6 @@ struct MetricsCalculator {
     /// because the GPU path may have found more candidates than fit in the output buffer.
     /// The atomic counter value (true total) is passed here so the reported star count
     /// is always accurate, even when the candidate list was capped.
-    ///
-    /// Per-star shape fitting is parallelized with `withTaskGroup`: each candidate gets
-    /// its own task on the cooperative thread pool, so all available CPU cores are used
-    /// simultaneously. This is most impactful when measuring 100-200 stars per frame.
     private static func measureCandidates(allCandidates: [StarCandidate],
                                           totalCount: Int,
                                           pixels: UnsafeBufferPointer<Float>,
@@ -227,40 +203,21 @@ struct MetricsCalculator {
         var snrValues:  [Float] = []
 
         if needMeasure {
-            // Wrap the pixel buffer for concurrent read-only sharing across tasks.
-            let shared = SharedPixels(buffer: pixels, width: width, height: height)
-            let bg = background, sig = sigma
-
-            // Dispatch one task per candidate — the cooperative thread pool schedules
-            // them across all available cores automatically.
-            let measurements: [StarMeasurement] = await withTaskGroup(
-                of: StarMeasurement?.self
-            ) { group in
-                for candidate in candidates {
-                    group.addTask {
-                        let (fwhm, ecc, snr) = measureShape(
-                            pixels: shared.buffer, width: shared.width, height: shared.height,
-                            cx: candidate.x, cy: candidate.y,
-                            background: bg, sigma: sig
-                        )
-                        // Reject hot pixels (FWHM < 0.5 px) and pathological blobs (> 20 px).
-                        guard fwhm >= 0.5, fwhm <= 20 else { return nil }
-                        return StarMeasurement(fwhm: fwhm, ecc: ecc, snr: snr)
-                    }
-                }
-
-                var results: [StarMeasurement] = []
-                results.reserveCapacity(candidates.count)
-                for await measurement in group {
-                    if let m = measurement { results.append(m) }
-                }
-                return results
-            }
-
-            for m in measurements {
-                if config.computeFWHM         { fwhmValues.append(m.fwhm) }
-                if config.computeEccentricity { eccValues.append(m.ecc) }
-                if config.computeSNR, m.snr > 0 { snrValues.append(m.snr) }
+            // Sequential measurement: per-star work (~10 µs each) is far smaller than the
+            // overhead of creating an async task per candidate. With multiple images loading
+            // concurrently this previously produced 800–1600 micro-tasks that flooded the
+            // cooperative thread pool and starved the main thread. A simple loop is faster.
+            for candidate in candidates {
+                let (fwhm, ecc, snr) = measureShape(
+                    pixels: pixels, width: width, height: height,
+                    cx: candidate.x, cy: candidate.y,
+                    background: background, sigma: sigma
+                )
+                // Reject hot pixels (FWHM < 0.5 px) and pathological blobs (> 20 px).
+                guard fwhm >= 0.5, fwhm <= 20 else { continue }
+                if config.computeFWHM         { fwhmValues.append(fwhm) }
+                if config.computeEccentricity { eccValues.append(ecc) }
+                if config.computeSNR, snr > 0 { snrValues.append(snr) }
             }
         }
 

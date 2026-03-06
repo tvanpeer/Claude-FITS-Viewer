@@ -47,11 +47,14 @@ struct KeySettingsTab: View {
                 LabeledContent("Next Image") {
                     KeyRecorderButton(keyString: $settings.nextImageKey)
                 }
-                LabeledContent("Reject Image") {
+                Toggle("Single key reject/undo (toggle)", isOn: $settings.useToggleReject)
+                LabeledContent(settings.useToggleReject ? "Reject / Undo" : "Reject Image") {
                     KeyRecorderButton(keyString: $settings.rejectKey)
                 }
-                LabeledContent("Undo Rejection") {
-                    KeyRecorderButton(keyString: $settings.undoKey)
+                if !settings.useToggleReject {
+                    LabeledContent("Undo Rejection") {
+                        KeyRecorderButton(keyString: $settings.undoKey)
+                    }
                 }
             }
 

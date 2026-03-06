@@ -90,6 +90,9 @@ final class ImageEntry: Identifiable {
         return cleaned.isEmpty ? nil : cleaned
     }
 
+    /// Canonical filter group derived from the raw FILTER header value.
+    var filterGroup: FilterGroup { FilterGroup.normalise(filterName) }
+
     init(url: URL, directoryBookmark: Data? = nil) {
         self.url = url
         self.originalURL = url
@@ -115,6 +118,60 @@ final class ImageStore {
     var errorMessage: String?
     var thumbnailSortOrder: ThumbnailSortOrder = .filename
     var thumbnailSortAscending: Bool = true
+
+    /// The filter group currently highlighted in the sidebar filter strip.
+    /// `nil` means "show all groups". Cleared on reset.
+    var sidebarFilterGroup: FilterGroup? = nil
+
+    // MARK: - Filter grouping
+
+    /// Unique filter groups present in the loaded session, in canonical display order.
+    var activeFilterGroups: [FilterGroup] {
+        let present = Set(entries.map { $0.filterGroup })
+        return FilterGroup.allCases.filter { present.contains($0) }
+    }
+
+    /// `sortedEntries` filtered to the sidebar selection, or all entries when no
+    /// filter is active.
+    var filteredSortedEntries: [ImageEntry] {
+        guard let group = sidebarFilterGroup else { return sortedEntries }
+        return sortedEntries.filter { $0.filterGroup == group }
+    }
+
+    /// `sortedEntries` grouped by filter group, in canonical FilterGroup order.
+    /// Groups with no entries are omitted.
+    var groupedSortedEntries: [(group: FilterGroup, entries: [ImageEntry])] {
+        let grouped = Dictionary(grouping: sortedEntries) { $0.filterGroup }
+        return FilterGroup.allCases.compactMap { group in
+            guard let entries = grouped[group], !entries.isEmpty else { return nil }
+            return (group: group, entries: entries)
+        }
+    }
+
+    /// Per-group statistics used for relative badge thresholds and auto-reject.
+    ///
+    /// Stored (not computed) so that individual per-entry metrics updates during a batch
+    /// do not cause every visible ThumbnailCell to re-render and recompute O(n) stats.
+    /// Updated only at batch boundaries via `updateGroupStatistics()`.
+    private(set) var groupStatistics: [FilterGroup: GroupStats] = [:]
+
+    private func updateGroupStatistics() {
+        let grouped = Dictionary(grouping: entries) { $0.filterGroup }
+        var result: [FilterGroup: GroupStats] = [:]
+        for group in FilterGroup.allCases {
+            guard let groupEntries = grouped[group], !groupEntries.isEmpty else { continue }
+            let fwhms  = groupEntries.compactMap { $0.metrics?.fwhm }.sorted()
+            let stars  = groupEntries.compactMap { $0.metrics?.starCount }.sorted()
+            let scores = groupEntries.compactMap { $0.metrics?.qualityScore }.sorted()
+            result[group] = GroupStats(
+                medianFWHM:         fwhms.isEmpty  ? nil : fwhms[fwhms.count / 2],
+                medianStarCount:    stars.isEmpty  ? nil : stars[stars.count / 2],
+                topThirdScoreFloor: scores.count < 3 ? nil : scores[scores.count * 2 / 3],
+                isNarrowband:       group.isNarrowband
+            )
+        }
+        groupStatistics = result
+    }
 
     var sortedEntries: [ImageEntry] {
         let asc = thumbnailSortAscending
@@ -176,6 +233,8 @@ final class ImageStore {
         batchElapsed = nil
         isBatchProcessing = false
         errorMessage = nil
+        sidebarFilterGroup = nil
+        groupStatistics = [:]
     }
 
     // MARK: - Navigation
@@ -200,7 +259,6 @@ final class ImageStore {
         }
         if index == 0 {
             NSSound.beep()
-            selectedEntry = ordered[ordered.count - 1]
         } else {
             selectedEntry = ordered[index - 1]
         }
@@ -216,10 +274,15 @@ final class ImageStore {
         }
         if index == ordered.count - 1 {
             NSSound.beep()
-            selectedEntry = ordered[0]
         } else {
             selectedEntry = ordered[index + 1]
         }
+    }
+
+    /// Toggles rejection for the selected entry: rejects if not rejected, undoes if already rejected.
+    func toggleRejectSelected() {
+        guard let entry = selectedEntry else { return }
+        if entry.isRejected { undoRejectSelected() } else { rejectSelected() }
     }
 
     // MARK: - File Operations
@@ -238,7 +301,17 @@ final class ImageStore {
     }
 
     func rejectSelected() {
-        guard let entry = selectedEntry, !entry.isRejected else { return }
+        guard let entry = selectedEntry else { return }
+        rejectEntry(entry)
+    }
+
+    /// Batch-reject multiple entries. Used by the session chart drag-select action.
+    func rejectEntries(_ entriesToReject: [ImageEntry]) {
+        for entry in entriesToReject { rejectEntry(entry) }
+    }
+
+    private func rejectEntry(_ entry: ImageEntry) {
+        guard !entry.isRejected else { return }
 
         let dirURL = accessDirectory(for: entry)
         defer { dirURL?.stopAccessingSecurityScopedResource() }
@@ -256,8 +329,49 @@ final class ImageStore {
             entry.url = destinationURL
             entry.isRejected = true
         } catch {
-            errorMessage = "Failed to reject image: \(error.localizedDescription)"
+            errorMessage = "Failed to reject \(entry.fileName): \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Auto-reject
+
+    /// Returns entries that would be rejected by `config`, without touching any files.
+    ///
+    /// Thresholds are evaluated per filter group so that narrowband groups with naturally
+    /// low star counts are not falsely penalised by relative star-count checks.
+    func previewAutoReject(config: AutoRejectConfig) -> [ImageEntry] {
+        let stats = groupStatistics
+        return entries.filter { entry in
+            guard !entry.isRejected, let m = entry.metrics else { return false }
+            let gs = stats[entry.filterGroup]
+
+            // Eccentricity is an absolute threshold in both modes.
+            if config.useEccentricity,
+               let ecc = m.eccentricity,
+               Float(config.eccentricityThreshold) < ecc { return true }
+
+            switch config.mode {
+            case .relative:
+                if config.useFWHM, let fwhm = m.fwhm, let medFWHM = gs?.medianFWHM,
+                   Double(fwhm) > Double(medFWHM) * config.fwhmMultiplier { return true }
+                if config.useStarCount, let stars = m.starCount, let medStars = gs?.medianStarCount,
+                   Double(stars) < Double(medStars) * config.starCountMultiplier { return true }
+
+            case .absolute:
+                if config.useFWHM, let fwhm = m.fwhm,
+                   Double(fwhm) > config.absoluteFWHM { return true }
+                if config.useStarCount, let stars = m.starCount,
+                   stars < config.absoluteStarCountFloor { return true }
+                if config.useScore,
+                   m.qualityScore < config.scoreFloor { return true }
+            }
+            return false
+        }
+    }
+
+    /// Rejects all frames that match `config`, moving them to the `REJECTED/` folder.
+    func applyAutoReject(config: AutoRejectConfig) {
+        rejectEntries(previewAutoReject(config: config))
     }
 
     func undoRejectSelected() {
@@ -420,7 +534,58 @@ final class ImageStore {
         openFiles(fitsURLs, directoryBookmark: dirBookmark,
                   maxDisplaySize: settings.maxDisplaySize,
                   maxThumbnailSize: settings.maxThumbnailSize,
-                  metricsConfig: settings.metricsConfig)
+                  metricsConfig: settings.effectiveMetricsConfig)
+    }
+
+    /// Opens dropped URLs (folders and/or individual FITS files) from a drag & drop operation.
+    ///
+    /// Folders are expanded to their immediate FITS contents. Individual FITS files are used
+    /// directly. Files from different directories are all added to the current session.
+    func openDroppedItems(_ urls: [URL], settings: AppSettings) {
+        let fitsExtensions: Set<String> = ["fits", "fit", "fts"]
+        var fitsURLs: [URL] = []
+        var dirBookmark: Data?
+
+        for url in urls {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(
+                atPath: url.path(percentEncoded: false), isDirectory: &isDir) else { continue }
+
+            if isDir.boolValue {
+                // Dropped folder: build a security-scoped bookmark and list FITS files.
+                if dirBookmark == nil {
+                    dirBookmark = try? url.bookmarkData(
+                        options: .withSecurityScope,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil)
+                }
+                if let contents = try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
+                    let fits = contents
+                        .filter { fitsExtensions.contains($0.pathExtension.lowercased()) }
+                        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                    fitsURLs.append(contentsOf: fits)
+                }
+            } else if fitsExtensions.contains(url.pathExtension.lowercased()) {
+                fitsURLs.append(url)
+            }
+        }
+
+        guard !fitsURLs.isEmpty else { return }
+
+        // For individual dropped files, try to bookmark the parent directory.
+        if dirBookmark == nil, let first = fitsURLs.first {
+            let parent = first.deletingLastPathComponent()
+            dirBookmark = try? parent.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil)
+        }
+
+        openFiles(fitsURLs, directoryBookmark: dirBookmark,
+                  maxDisplaySize: settings.maxDisplaySize,
+                  maxThumbnailSize: settings.maxThumbnailSize,
+                  metricsConfig: settings.effectiveMetricsConfig)
     }
 
     func openFilesPanel(settings: AppSettings) {
@@ -453,7 +618,7 @@ final class ImageStore {
         openFiles(fitsURLs, directoryBookmark: dirBookmark,
                   maxDisplaySize: settings.maxDisplaySize,
                   maxThumbnailSize: settings.maxThumbnailSize,
-                  metricsConfig: settings.metricsConfig)
+                  metricsConfig: settings.effectiveMetricsConfig)
     }
 
     // MARK: - Loading
@@ -481,7 +646,7 @@ final class ImageStore {
         isBatchProcessing = true
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        Task { [weak self] in
+        Task(priority: .utility) { [weak self] in
             guard let self else { return }
             await processParallel(newEntries, selectFirst: selectFirst,
                                   maxDisplaySize: maxDisplaySize,
@@ -557,9 +722,12 @@ final class ImageStore {
         isBatchProcessing = true
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        Task { [weak self] in
+        Task(priority: .utility) { [weak self] in
             guard let self else { return }
-            let maxConcurrency = max(2, ProcessInfo.processInfo.activeProcessorCount / 2)
+            // Cap at 2: each recompute task now uses the GPU path (readIntoBuffer +
+            // Metal star detection), so two tasks keep the GPU and I/O pipeline full
+            // without flooding the thread pool or starving the UI.
+            let maxConcurrency = 2
 
             await withTaskGroup(of: Void.self) { group in
                 var activeCount = 0
@@ -591,6 +759,7 @@ final class ImageStore {
                 }
             }
 
+            updateGroupStatistics()
             batchElapsed = CFAbsoluteTimeGetCurrent() - startTime
             isBatchProcessing = false
             for dirURL in accessedDirs { dirURL.stopAccessingSecurityScopedResource() }
@@ -601,6 +770,20 @@ final class ImageStore {
                                                      config: MetricsConfig) async -> FrameMetrics? {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+
+        // GPU path: read into a Metal shared buffer (same path as the initial load),
+        // then run the GPU detection kernel. Much faster than the CPU fallback because
+        // the Metal kernel uses the full frame, while the CPU path is limited to a crop.
+        if let device = ImageStretcher.metalDevice,
+           let bufferResult = try? FITSReader.readIntoBuffer(from: url, device: device) {
+            let meta = bufferResult.metadata
+            return await MetricsCalculator.compute(metalBuffer: bufferResult.metalBuffer,
+                                                   device: device,
+                                                   width: meta.width, height: meta.height,
+                                                   config: config)
+        }
+
+        // CPU fallback when Metal is unavailable.
         guard let fits = try? FITSReader.read(from: url) else { return nil }
         return await MetricsCalculator.compute(pixels: fits.pixelValues,
                                                width: fits.width, height: fits.height,
@@ -615,7 +798,9 @@ final class ImageStore {
                                   maxDisplaySize: Int = 1024, maxThumbnailSize: Int = 120,
                                   metricsConfig: MetricsConfig = MetricsConfig()) async {
 
-        let concurrency = max(4, min(ProcessInfo.processInfo.activeProcessorCount, 8))
+        // 3 concurrent tasks: enough to keep GPU and I/O pipeline full without
+        // flooding the thread pool or causing disk thrashing on large files.
+        let concurrency = 3
 
         await withTaskGroup(of: Void.self) { group in
             var activeCount = 0
@@ -649,6 +834,8 @@ final class ImageStore {
                 activeCount += 1
             }
         }
+
+        updateGroupStatistics()
     }
 
     /// Load, GPU-stretch, and compute all metrics for a single FITS file in one pass.

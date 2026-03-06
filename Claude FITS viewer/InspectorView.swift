@@ -96,7 +96,7 @@ private struct InspectorMetricsSection: View {
                     }
                     Divider().padding(.vertical, 4)
                     MetricRow(label: "Score", value: "\(metrics.qualityScore) / 100")
-                        .foregroundStyle(metrics.badgeColor)
+                        .foregroundStyle(metrics.scoreColor)
                 }
             } else if config.needsStarDetection {
                 Text("Computing…")
