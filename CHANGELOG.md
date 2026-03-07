@@ -4,6 +4,14 @@ All notable changes to Simple Claude FITS Viewer are recorded here.
 
 ---
 
+## 2026-03-07 — Skip float FITS files silently at scan time with alert
+
+### Fixed
+- Float FITS files (BITPIX < 0) no longer flash as a spinner in the sidebar before disappearing. `FITSReader.peekBitpix(url:)` reads only the first 2880-byte header block to check BITPIX before an `ImageEntry` is created; float files are skipped entirely in `openFiles`.
+- When one or more files are skipped, `ImageStore.errorMessage` is set, surfacing an alert that lists up to 5 filenames and a "and N more" suffix for larger batches.
+
+---
+
 ## 2026-03-07 — Drop float FITS support; BZERO-only performance improvement
 
 ### Removed

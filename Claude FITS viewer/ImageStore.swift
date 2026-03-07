@@ -256,7 +256,7 @@ final class ImageStore {
         let remaining = ordered.filter { !idsToRemove.contains($0.id) }
         let nextEntry: ImageEntry?
         if let idx = firstRemovedIdx {
-            nextEntry = remaining.first { ordered.firstIndex(of: $0)! >= idx } ?? remaining.last
+            nextEntry = remaining.first { e in (ordered.firstIndex(where: { $0 === e }) ?? -1) >= idx } ?? remaining.last
         } else {
             nextEntry = remaining.first
         }
@@ -638,11 +638,23 @@ final class ImageStore {
         let selectFirst = (selectedEntry == nil)
 
         var newEntries: [ImageEntry] = []
+        var skippedFloat: [String] = []
         for url in urls {
             guard ["fits", "fit", "fts"].contains(url.pathExtension.lowercased()) else { continue }
+            // Skip float FITS files (BITPIX < 0) before creating an entry so they
+            // never appear in the sidebar even briefly.
+            if let bitpix = FITSReader.peekBitpix(url: url), ![8, 16, 32].contains(bitpix) {
+                skippedFloat.append(url.lastPathComponent)
+                continue
+            }
             let entry = ImageEntry(url: url, directoryBookmark: directoryBookmark)
             entries.append(entry)
             newEntries.append(entry)
+        }
+        if !skippedFloat.isEmpty {
+            let preview = skippedFloat.prefix(5).joined(separator: ", ")
+            let suffix  = skippedFloat.count > 5 ? " and \(skippedFloat.count - 5) more" : ""
+            errorMessage = "Skipped \(skippedFloat.count) floating-point FITS file\(skippedFloat.count == 1 ? "" : "s") (not supported): \(preview)\(suffix)"
         }
         guard !newEntries.isEmpty else { return }
 

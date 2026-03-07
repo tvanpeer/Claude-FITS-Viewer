@@ -70,6 +70,28 @@ struct FITSImage {
 /// Reads and parses FITS (Flexible Image Transport System) files
 struct FITSReader {
 
+    // MARK: - BITPIX Peek (cheap format check)
+
+    /// Reads only the first FITS header block (2880 bytes) and returns the BITPIX value.
+    /// Used to skip unsupported formats before creating an entry. Returns nil on any error.
+    static func peekBitpix(url: URL) -> Int? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let block = try? handle.read(upToCount: 2880), block.count >= 80 else { return nil }
+        for i in stride(from: 0, to: block.count, by: 80) {
+            let end = min(i + 80, block.count)
+            guard let card = String(data: block[i..<end], encoding: .ascii) else { continue }
+            let keyword = String(card.prefix(8)).trimmingCharacters(in: .whitespaces)
+            guard keyword == "BITPIX" else { continue }
+            guard card.count > 10, card.dropFirst(8).prefix(2) == "= " else { return nil }
+            let valueField = card.dropFirst(10)
+            let raw = (valueField.split(separator: "/").first ?? valueField[...])
+                .trimmingCharacters(in: .whitespaces)
+            return Int(raw)
+        }
+        return nil
+    }
+
     // MARK: - Header Parsing (shared between both read paths)
 
     /// Removes FITS string quoting and trailing whitespace from a header value.
