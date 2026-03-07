@@ -4,6 +4,13 @@ All notable changes to Simple Claude FITS Viewer are recorded here.
 
 ---
 
+## 2026-03-07 — Fix star counts inflated 3× for integer FITS images
+
+### Fixed
+- **NMS skipped for integer images** (`MetricsCalculator`): the GPU detection path bypassed non-maximum suppression for BITPIX > 0 images on the assumption that integer ties prevent multiple local maxima per star. In practice, read noise causes adjacent integer-valued PSF pixels to differ by one ADU, so each star still produces 2–3 competing local maxima. The result was a 3× star-count inflation for BITPIX=8/16/32 images. Removed the `bitpix`-gated NMS logic — NMS now runs unconditionally on both GPU and CPU paths, consistent with the CPU-only `computeImpl` path which already applied NMS for all BITPIX values.
+
+---
+
 ## 2026-03-07 — Fix FWHM/Ecc/SNR missing from session chart
 
 ### Fixed

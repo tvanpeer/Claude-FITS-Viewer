@@ -807,7 +807,7 @@ final class ImageStore {
             return await MetricsCalculator.compute(metalBuffer: bufferResult.metalBuffer,
                                                    device: device,
                                                    width: meta.width, height: meta.height,
-                                                   bitpix: meta.bitpix, config: config)
+                                                   config: config)
         }
 
         // CPU fallback when Metal is unavailable.
@@ -877,7 +877,7 @@ final class ImageStore {
                         metrics = await MetricsCalculator.compute(
                             metalBuffer: buffer, device: device,
                             width: fast.width, height: fast.height,
-                            bitpix: fast.bitpix, config: metricsConfig)
+                            config: metricsConfig)
                     } else if metricsConfig.needsStarDetection {
                         metrics = await Self.loadMetricsOnly(url: url, config: metricsConfig)
                     } else {

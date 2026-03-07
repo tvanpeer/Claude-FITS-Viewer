@@ -66,7 +66,7 @@ struct MetricsCalculator {
     /// Falls back to the CPU path automatically if the Metal pipeline is
     /// unavailable (e.g. CI, sandboxed test environment).
     static func compute(metalBuffer: MTLBuffer, device: MTLDevice,
-                        width: Int, height: Int, bitpix: Int = -32,
+                        width: Int, height: Int,
                         config: MetricsConfig) async -> FrameMetrics? {
         guard config.needsStarDetection else { return nil }
         let count = width * height
@@ -81,30 +81,17 @@ struct MetricsCalculator {
         // Try GPU detection over the full frame; fall back to CPU on failure.
         let allCandidates: [StarCandidate]
 
-        // Non-maximum suppression is only needed for float FITS images (BITPIX < 0).
-        // In integer images (BITPIX > 0) adjacent pixels often share the same ADU
-        // value, so the strict-greater-than local-maximum test naturally produces at
-        // most one candidate per stellar PSF. Float images have no such ties — every
-        // sub-pixel noise bump is unique — so a single star can generate several
-        // local maxima. NMS collapses those back to one peak per star (~20 ms on
-        // 50 000 candidates, unnecessary overhead for integer data).
-        let needsNMS = bitpix < 0
-
         if let result = findLocalMaximaGPU(metalBuffer: metalBuffer,
                                             width: width, height: height,
                                             threshold: threshold) {
-            allCandidates = needsNMS
-                ? nonMaximumSuppression(result.candidates, imageWidth: width)
-                : result.candidates
+            allCandidates = nonMaximumSuppression(result.candidates, imageWidth: width)
         } else {
             let cpu = findLocalMaxima(pixels: pixels,
                                       width: width, height: height,
                                       cropX: 0, cropY: 0,
                                       cropW: width, cropH: height,
                                       threshold: threshold)
-            allCandidates = needsNMS
-                ? nonMaximumSuppression(cpu, imageWidth: width)
-                : cpu
+            allCandidates = nonMaximumSuppression(cpu, imageWidth: width)
         }
 
         guard !allCandidates.isEmpty else { return nil }
