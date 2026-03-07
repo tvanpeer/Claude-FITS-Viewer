@@ -7,17 +7,15 @@
 
 import SwiftUI
 
-/// Sheet that lets the user choose export format and minimum star rating
-/// before opening an NSSavePanel.
+/// Sheet that lets the user choose export format before opening an NSSavePanel.
 struct ExportSheet: View {
     @Binding var isPresented: Bool
     @Environment(ImageStore.self) private var store
 
     @State private var format = ExportFormat.plainText
-    @State private var minimumRating = 0
 
     private var keptCount: Int {
-        store.entries.filter { !$0.isRejected && $0.rating >= minimumRating }.count
+        store.entries.filter { !$0.isRejected }.count
     }
 
     var body: some View {
@@ -26,13 +24,6 @@ struct ExportSheet: View {
                 Picker("Format", selection: $format) {
                     ForEach(ExportFormat.allCases, id: \.self) { fmt in
                         Text(fmt.displayName).tag(fmt)
-                    }
-                }
-
-                Picker("Minimum rating", selection: $minimumRating) {
-                    Text("All kept frames").tag(0)
-                    ForEach(1...5, id: \.self) { n in
-                        Text(String(repeating: "★", count: n) + " or above").tag(n)
                     }
                 }
             }
@@ -48,13 +39,13 @@ struct ExportSheet: View {
                 Spacer()
                 Button("Save…") {
                     isPresented = false
-                    store.export(format: format, minimumRating: minimumRating)
+                    store.export(format: format)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(keptCount == 0)
             }
             .padding()
         }
-        .frame(width: 380, height: 220)
+        .frame(width: 380, height: 180)
     }
 }

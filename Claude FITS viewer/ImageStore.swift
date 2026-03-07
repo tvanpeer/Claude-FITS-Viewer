@@ -18,7 +18,6 @@ enum ThumbnailSortOrder: String, CaseIterable {
     case eccentricity = "Eccentricity"
     case snr          = "SNR"
     case starCount    = "Stars"
-    case rating       = "Rating"
 }
 
 // MARK: - Export format
@@ -79,9 +78,6 @@ final class ImageEntry: Identifiable {
 
     /// All FITS header key-value pairs parsed from the file
     var headers: [String: String] = [:]
-
-    /// Star rating: 0 = unrated, 1–5
-    var rating: Int = 0
 
     /// The FILTER header value, cleaned of FITS string quoting
     var filterName: String? {
@@ -190,8 +186,6 @@ final class ImageStore {
                 default:             return false
                 }
             }
-        case .rating:
-            cachedSortedEntries = entries.sorted { asc ? $0.rating < $1.rating : $0.rating > $1.rating }
         }
     }
 
@@ -417,68 +411,11 @@ final class ImageStore {
         }
     }
 
-    // MARK: - Rating
-
-    /// Set the star rating (0 = clear, 1–5) for an entry and persist to the sidecar.
-    func setRating(_ rating: Int, for entry: ImageEntry?) {
-        guard let entry, (0...5).contains(rating) else { return }
-        guard entry.rating != rating else { return }
-        entry.rating = rating
-        saveSidecar(changedEntry: entry)
-        if thumbnailSortOrder == .rating { updateCachedSort() }
-    }
-
-    // MARK: - Sidecar persistence
-
-    /// Loads saved ratings from `.culling.json` sidecars for the given entries,
-    /// grouping by original parent directory so multi-folder loads are handled correctly.
-    private func loadSidecarRatings(for newEntries: [ImageEntry]) {
-        let grouped = Dictionary(grouping: newEntries) {
-            $0.originalURL.deletingLastPathComponent().path(percentEncoded: false)
-        }
-        for (_, group) in grouped {
-            guard let first = group.first,
-                  let dirURL = accessDirectory(for: first) else { continue }
-            defer { dirURL.stopAccessingSecurityScopedResource() }
-
-            let sidecarURL = dirURL.appending(component: ".culling.json")
-            guard let data = try? Data(contentsOf: sidecarURL),
-                  let saved = try? JSONDecoder().decode([String: Int].self, from: data) else { continue }
-
-            for entry in group {
-                if let r = saved[entry.fileName], (1...5).contains(r) {
-                    entry.rating = r
-                }
-            }
-        }
-    }
-
-    /// Saves all ratings for entries sharing the same original parent directory as `changedEntry`.
-    private func saveSidecar(changedEntry: ImageEntry) {
-        let dirPath = changedEntry.originalURL.deletingLastPathComponent().path(percentEncoded: false)
-        let dirEntries = entries.filter {
-            $0.originalURL.deletingLastPathComponent().path(percentEncoded: false) == dirPath
-        }
-
-        guard let dirURL = accessDirectory(for: changedEntry) else { return }
-        defer { dirURL.stopAccessingSecurityScopedResource() }
-
-        var ratings: [String: Int] = [:]
-        for entry in dirEntries where entry.rating > 0 {
-            ratings[entry.fileName] = entry.rating
-        }
-
-        let sidecarURL = dirURL.appending(component: ".culling.json")
-        if let data = try? JSONEncoder().encode(ratings) {
-            try? data.write(to: sidecarURL, options: .atomic)
-        }
-    }
-
     // MARK: - Export
 
     /// Presents a save panel and writes a frame list in the chosen format.
-    /// Only non-rejected frames with `rating >= minimumRating` are included.
-    func export(format: ExportFormat, minimumRating: Int) {
+    /// Only non-rejected frames are included.
+    func export(format: ExportFormat) {
         let panel = NSSavePanel()
         panel.title = "Export Frame List"
         switch format {
@@ -492,23 +429,22 @@ final class ImageStore {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        let kept = entries.filter { !$0.isRejected && $0.rating >= minimumRating }
+        let kept = entries.filter { !$0.isRejected }
 
         let content: String
         switch format {
         case .plainText:
             content = kept.map { $0.url.path(percentEncoded: false) }.joined(separator: "\n")
         case .csv:
-            var lines = ["path,rating,fwhm,eccentricity,snr,stars"]
+            var lines = ["path,fwhm,eccentricity,snr,stars"]
             for entry in kept {
                 let m     = entry.metrics
                 let path  = entry.url.path(percentEncoded: false)
-                let r     = String(entry.rating)
                 let fwhm  = m.flatMap { $0.fwhm }.map        { $0.formatted(.number.precision(.fractionLength(2))) } ?? ""
                 let ecc   = m.flatMap { $0.eccentricity }.map { $0.formatted(.number.precision(.fractionLength(3))) } ?? ""
                 let snr   = m.flatMap { $0.snr }.map          { $0.formatted(.number.precision(.fractionLength(1))) } ?? ""
                 let stars = m.flatMap { $0.starCount }.map     { String($0) } ?? ""
-                lines.append("\(path),\(r),\(fwhm),\(ecc),\(snr),\(stars)")
+                lines.append("\(path),\(fwhm),\(ecc),\(snr),\(stars)")
             }
             content = lines.joined(separator: "\n")
         }
@@ -657,9 +593,6 @@ final class ImageStore {
         guard !newEntries.isEmpty else { return }
 
         if selectFirst { selectedEntry = newEntries[0] }
-
-        // Restore saved ratings before processing starts
-        loadSidecarRatings(for: newEntries)
 
         // Populate the sort/filter cache so the sidebar renders immediately
         // with loading spinners while the batch processes in the background.

@@ -56,28 +56,11 @@ struct KeySettingsTab: View {
                         KeyRecorderButton(keyString: $settings.undoKey)
                     }
                 }
+                LabeledContent("Toggle Simple/Geek Mode") {
+                    KeyRecorderButton(keyString: $settings.toggleModeKey)
+                }
             }
 
-            Section("Rating") {
-                LabeledContent("1 Star") {
-                    KeyRecorderButton(keyString: $settings.rating1Key)
-                }
-                LabeledContent("2 Stars") {
-                    KeyRecorderButton(keyString: $settings.rating2Key)
-                }
-                LabeledContent("3 Stars") {
-                    KeyRecorderButton(keyString: $settings.rating3Key)
-                }
-                LabeledContent("4 Stars") {
-                    KeyRecorderButton(keyString: $settings.rating4Key)
-                }
-                LabeledContent("5 Stars") {
-                    KeyRecorderButton(keyString: $settings.rating5Key)
-                }
-                LabeledContent("Clear Rating") {
-                    KeyRecorderButton(keyString: $settings.clearRatingKey)
-                }
-            }
         }
         .formStyle(.grouped)
     }

@@ -38,26 +38,8 @@ final class AppSettings {
     var lastImageKey: String = "⇲" {
         didSet { UserDefaults.standard.set(lastImageKey, forKey: "lastImageKey") }
     }
-
-    // MARK: - Rating Key Bindings
-
-    var rating1Key: String = "1" {
-        didSet { UserDefaults.standard.set(rating1Key, forKey: "rating1Key") }
-    }
-    var rating2Key: String = "2" {
-        didSet { UserDefaults.standard.set(rating2Key, forKey: "rating2Key") }
-    }
-    var rating3Key: String = "3" {
-        didSet { UserDefaults.standard.set(rating3Key, forKey: "rating3Key") }
-    }
-    var rating4Key: String = "4" {
-        didSet { UserDefaults.standard.set(rating4Key, forKey: "rating4Key") }
-    }
-    var rating5Key: String = "5" {
-        didSet { UserDefaults.standard.set(rating5Key, forKey: "rating5Key") }
-    }
-    var clearRatingKey: String = "0" {
-        didSet { UserDefaults.standard.set(clearRatingKey, forKey: "clearRatingKey") }
+    var toggleModeKey: String = "g" {
+        didSet { UserDefaults.standard.set(toggleModeKey, forKey: "toggleModeKey") }
     }
 
     // MARK: - Image Sizes
@@ -110,13 +92,7 @@ final class AppSettings {
         if let v = UserDefaults.standard.object(forKey: "useToggleReject") as? Bool { useToggleReject = v }
         if let v = UserDefaults.standard.string(forKey: "firstImageKey") { firstImageKey = v }
         if let v = UserDefaults.standard.string(forKey: "lastImageKey")  { lastImageKey  = v }
-        // Rating keys
-        if let v = UserDefaults.standard.string(forKey: "rating1Key")    { rating1Key    = v }
-        if let v = UserDefaults.standard.string(forKey: "rating2Key")    { rating2Key    = v }
-        if let v = UserDefaults.standard.string(forKey: "rating3Key")    { rating3Key    = v }
-        if let v = UserDefaults.standard.string(forKey: "rating4Key")    { rating4Key    = v }
-        if let v = UserDefaults.standard.string(forKey: "rating5Key")    { rating5Key    = v }
-        if let v = UserDefaults.standard.string(forKey: "clearRatingKey"){ clearRatingKey = v }
+        if let v = UserDefaults.standard.string(forKey: "toggleModeKey") { toggleModeKey = v }
         // Sizes
         let display = UserDefaults.standard.integer(forKey: "maxDisplaySize")
         if display > 0 { maxDisplaySize = display }
@@ -139,17 +115,9 @@ final class AppSettings {
     var nextKeyEquivalent:   KeyEquivalent { keyEquivalent(for: nextImageKey,  fallback: .downArrow) }
     var rejectKeyEquivalent: KeyEquivalent { keyEquivalent(for: rejectKey,     fallback: KeyEquivalent("x")) }
     var undoKeyEquivalent:   KeyEquivalent { keyEquivalent(for: undoKey,       fallback: KeyEquivalent("u")) }
-    var firstImageKeyEquivalent: KeyEquivalent { keyEquivalent(for: firstImageKey, fallback: .home) }
-    var lastImageKeyEquivalent:  KeyEquivalent { keyEquivalent(for: lastImageKey,  fallback: .end) }
-
-    // MARK: - Key Equivalents: rating
-
-    var rating1KeyEquivalent:    KeyEquivalent { keyEquivalent(for: rating1Key,    fallback: KeyEquivalent("1")) }
-    var rating2KeyEquivalent:    KeyEquivalent { keyEquivalent(for: rating2Key,    fallback: KeyEquivalent("2")) }
-    var rating3KeyEquivalent:    KeyEquivalent { keyEquivalent(for: rating3Key,    fallback: KeyEquivalent("3")) }
-    var rating4KeyEquivalent:    KeyEquivalent { keyEquivalent(for: rating4Key,    fallback: KeyEquivalent("4")) }
-    var rating5KeyEquivalent:    KeyEquivalent { keyEquivalent(for: rating5Key,    fallback: KeyEquivalent("5")) }
-    var clearRatingKeyEquivalent: KeyEquivalent { keyEquivalent(for: clearRatingKey, fallback: KeyEquivalent("0")) }
+    var firstImageKeyEquivalent:  KeyEquivalent { keyEquivalent(for: firstImageKey,  fallback: .home) }
+    var lastImageKeyEquivalent:   KeyEquivalent { keyEquivalent(for: lastImageKey,   fallback: .end) }
+    var toggleModeKeyEquivalent:  KeyEquivalent { keyEquivalent(for: toggleModeKey,  fallback: KeyEquivalent("g")) }
 
     // MARK: - Appearance helper
 

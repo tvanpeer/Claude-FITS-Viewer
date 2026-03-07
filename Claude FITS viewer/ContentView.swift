@@ -104,13 +104,10 @@ struct ContentView: View {
             store.undoRejectSelected()
             return .handled
         }
-        // Rating (disabled in Simple mode)
-        .onKeyPress(settings.rating1KeyEquivalent)    { guard !settings.isSimpleMode else { return .ignored }; store.setRating(1, for: store.selectedEntry); return .handled }
-        .onKeyPress(settings.rating2KeyEquivalent)    { guard !settings.isSimpleMode else { return .ignored }; store.setRating(2, for: store.selectedEntry); return .handled }
-        .onKeyPress(settings.rating3KeyEquivalent)    { guard !settings.isSimpleMode else { return .ignored }; store.setRating(3, for: store.selectedEntry); return .handled }
-        .onKeyPress(settings.rating4KeyEquivalent)    { guard !settings.isSimpleMode else { return .ignored }; store.setRating(4, for: store.selectedEntry); return .handled }
-        .onKeyPress(settings.rating5KeyEquivalent)    { guard !settings.isSimpleMode else { return .ignored }; store.setRating(5, for: store.selectedEntry); return .handled }
-        .onKeyPress(settings.clearRatingKeyEquivalent){ guard !settings.isSimpleMode else { return .ignored }; store.setRating(0, for: store.selectedEntry); return .handled }
+        .onKeyPress(settings.toggleModeKeyEquivalent) {
+            settings.isSimpleMode.toggle()
+            return .handled
+        }
     }
 
     private var minWindowWidth: CGFloat {
@@ -371,12 +368,6 @@ struct FITSToolbar: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
-                if !settings.isSimpleMode {
-                    Divider().frame(height: 20)
-                    RatingView(currentRating: entry.rating) { rating in
-                        store.setRating(rating, for: entry)
-                    }
-                }
             }
 
             Spacer()
@@ -564,15 +555,6 @@ struct ThumbnailCell: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    if entry.rating > 0 {
-                        HStack(spacing: 1) {
-                            ForEach(1...entry.rating, id: \.self) { _ in
-                                Image(systemName: "star.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(.yellow)
-                            }
-                        }
-                    }
                 }
             }
         }

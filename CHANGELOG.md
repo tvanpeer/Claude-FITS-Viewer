@@ -4,6 +4,16 @@ All notable changes to Simple Claude FITS Viewer are recorded here.
 
 ---
 
+## 2026-03-07 — Remove star rating system + add configurable Simple/Geek mode toggle key
+
+### Removed
+- **Star rating system**: removed `RatingView`, all 1–5 star rating key bindings, the Rating section in Settings, `ImageEntry.rating`, `setRating`, `loadSidecarRatings`, `saveSidecar`, the `.rating` sort order, and the minimum-rating filter from the Export sheet. The CSV export header is updated (`rating` column removed). `.culling.json` sidecar files are no longer written.
+
+### Added
+- **Configurable Simple/Geek mode toggle key** (`AppSettings.toggleModeKey`): defaults to `G`. Assignable in Settings → Keyboard. Toggles `isSimpleMode` on key press, same as the existing ⌘⇧M menu shortcut and toolbar button.
+
+---
+
 ## 2026-03-07 — Fix star counts ~38% too low + rename app to Claude FITS Viewer
 
 ### Fixed
