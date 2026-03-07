@@ -750,10 +750,8 @@ final class ImageStore {
 
         Task(priority: .utility) { [weak self] in
             guard let self else { return }
-            // Cap at 2: each recompute task now uses the GPU path (readIntoBuffer +
-            // Metal star detection), so two tasks keep the GPU and I/O pipeline full
-            // without flooding the thread pool or starving the UI.
-            let maxConcurrency = 2
+            // Scale to core count, same policy as processParallel.
+            let maxConcurrency = max(4, ProcessInfo.processInfo.activeProcessorCount - 2)
 
             await withTaskGroup(of: Void.self) { group in
                 var activeCount = 0
@@ -831,9 +829,10 @@ final class ImageStore {
                                   maxDisplaySize: Int = 1024, maxThumbnailSize: Int = 120,
                                   metricsConfig: MetricsConfig = MetricsConfig()) async {
 
-        // 3 concurrent tasks: enough to keep the GPU and I/O pipeline saturated
-        // without disk-thrashing on large FITS files.
-        let concurrency = 3
+        // Scale concurrency to core count, leaving 2 cores for the UI and system.
+        // Each task holds ~80 MB in MTLBuffers, so even 18 tasks on a Mac Studio Ultra
+        // uses only ~1.4 GB — well within available memory on any supported machine.
+        let concurrency = max(4, ProcessInfo.processInfo.activeProcessorCount - 2)
 
         // Task group returns (entry, metrics) so Phase B results are applied
         // directly on the main actor in the collection loop — no second
@@ -913,10 +912,12 @@ final class ImageStore {
             let meta     = bufferResult.metadata
             let floatPtr = bufferResult.metalBuffer.contents().assumingMemoryBound(to: Float.self)
             let histogram = MetricsCalculator.computeHistogram(ptr: floatPtr,
-                                                               count: meta.width * meta.height)
-            let display = ImageStretcher.createImage(inputBuffer: bufferResult.metalBuffer,
-                                                     width: meta.width, height: meta.height,
-                                                     maxDisplaySize: maxDisplaySize)
+                                                               count: meta.width * meta.height,
+                                                               minVal: meta.minValue,
+                                                               maxVal: meta.maxValue)
+            let display = await ImageStretcher.createImage(inputBuffer: bufferResult.metalBuffer,
+                                                           width: meta.width, height: meta.height,
+                                                           maxDisplaySize: maxDisplaySize)
             let thumb = display.flatMap { ImageStretcher.createThumbnail(from: $0, maxSize: maxThumbnailSize) }
             return FastLoadResult(
                 display: display, thumb: thumb,

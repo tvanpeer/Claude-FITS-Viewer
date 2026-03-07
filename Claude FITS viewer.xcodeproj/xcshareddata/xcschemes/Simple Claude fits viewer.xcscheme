@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "65BA7E902F52EE16002B50D4"
-               BuildableName = "Simple Claude fits viewer.app"
+               BuildableName = "Claude FITS Viewer.app"
                BlueprintName = "Simple Claude fits viewer"
                ReferencedContainer = "container:Claude FITS viewer.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
       shouldAutocreateTestPlan = "YES">
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Debug"
+      buildConfiguration = "Release"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "65BA7E902F52EE16002B50D4"
-            BuildableName = "Simple Claude fits viewer.app"
+            BuildableName = "Claude FITS Viewer.app"
             BlueprintName = "Simple Claude fits viewer"
             ReferencedContainer = "container:Claude FITS viewer.xcodeproj">
          </BuildableReference>
@@ -62,7 +62,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "65BA7E902F52EE16002B50D4"
-            BuildableName = "Simple Claude fits viewer.app"
+            BuildableName = "Claude FITS Viewer.app"
             BlueprintName = "Simple Claude fits viewer"
             ReferencedContainer = "container:Claude FITS viewer.xcodeproj">
          </BuildableReference>

@@ -56,7 +56,7 @@ struct ImageStretcher {
     /// The input buffer's contents are consumed (overwritten by percentile estimation is separate).
     /// Returns the NSImage and the retained output Metal buffer (caller doesn't need to manage it).
     static func createImage(inputBuffer: MTLBuffer, width: Int, height: Int,
-                            maxDisplaySize: Int = 0) -> NSImage? {
+                            maxDisplaySize: Int = 0) async -> NSImage? {
         let pixelCount = width * height
 
         // Read percentiles from the shared buffer without copying
@@ -65,9 +65,9 @@ struct ImageStretcher {
         let range = highClip - lowClip
         guard range > 0 else { return nil }
 
-        if let result = metalStretch(inputBuffer: inputBuffer, width: width, height: height,
-                                     lowClip: lowClip, highClip: highClip,
-                                     maxDisplaySize: maxDisplaySize) {
+        if let result = await metalStretch(inputBuffer: inputBuffer, width: width, height: height,
+                                           lowClip: lowClip, highClip: highClip,
+                                           maxDisplaySize: maxDisplaySize) {
             return result
         }
 
@@ -128,7 +128,7 @@ struct ImageStretcher {
     private static func metalStretch(
         inputBuffer: MTLBuffer, width: Int, height: Int,
         lowClip: Float, highClip: Float, maxDisplaySize: Int = 0
-    ) -> NSImage? {
+    ) async -> NSImage? {
         guard let device = metalDevice,
               let commandQueue = commandQueue,
               let pipelineState = pipelineState else { return nil }
@@ -164,8 +164,13 @@ struct ImageStretcher {
         encoder.dispatchThreads(gridSize, threadsPerThreadgroup: threadgroupSize)
         encoder.endEncoding()
 
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        // Non-blocking GPU wait: releases the cooperative thread while the GPU runs
+        // so the thread pool can schedule other tasks (Moffat fitting, other images)
+        // instead of blocking. This is the correct async pattern for Metal on Swift concurrency.
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            commandBuffer.addCompletedHandler { _ in continuation.resume() }
+            commandBuffer.commit()
+        }
 
         let colorSpace = CGColorSpaceCreateDeviceGray()
         let needsScale = maxDisplaySize > 0 && max(width, height) > maxDisplaySize

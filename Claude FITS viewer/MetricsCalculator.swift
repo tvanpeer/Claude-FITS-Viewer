@@ -81,9 +81,9 @@ struct MetricsCalculator {
         // Try GPU detection over the full frame; fall back to CPU on failure.
         let allCandidates: [StarCandidate]
 
-        if let result = findLocalMaximaGPU(metalBuffer: metalBuffer,
-                                            width: width, height: height,
-                                            threshold: threshold) {
+        if let result = await findLocalMaximaGPU(metalBuffer: metalBuffer,
+                                                  width: width, height: height,
+                                                  threshold: threshold) {
             allCandidates = nonMaximumSuppression(result.candidates, imageWidth: width)
         } else {
             let cpu = findLocalMaxima(pixels: pixels,
@@ -227,17 +227,14 @@ struct MetricsCalculator {
                             snr: snr, starCount: starCount, qualityScore: score)
     }
 
-    /// Compute a 256-bin histogram from sampled raw pixel data via a raw pointer.
-    /// Uses stride sampling to keep it fast on large images.
-    static func computeHistogram(ptr: UnsafePointer<Float>, count: Int) -> [Int] {
+    /// Compute a 256-bin histogram using pre-computed min/max values.
+    /// This is the fast path: skips the two full-buffer vDSP min/max passes
+    /// because the caller (FITSReader.readIntoBuffer) already computed them
+    /// while the buffer was hot in cache right after conversion.
+    static func computeHistogram(ptr: UnsafePointer<Float>, count: Int,
+                                 minVal: Float, maxVal: Float) -> [Int] {
         let binCount = 256
-        guard count > 0 else { return [Int](repeating: 0, count: binCount) }
-
-        var minVal: Float = 0
-        var maxVal: Float = 0
-        vDSP_minv(ptr, 1, &minVal, vDSP_Length(count))
-        vDSP_maxv(ptr, 1, &maxVal, vDSP_Length(count))
-        guard maxVal > minVal else { return [Int](repeating: 0, count: binCount) }
+        guard count > 0, maxVal > minVal else { return [Int](repeating: 0, count: binCount) }
 
         let scale = Float(binCount - 1) / (maxVal - minVal)
         var histogram = [Int](repeating: 0, count: binCount)
@@ -250,6 +247,20 @@ struct MetricsCalculator {
             i += stride
         }
         return histogram
+    }
+
+    /// Compute a 256-bin histogram from sampled raw pixel data via a raw pointer.
+    /// Uses stride sampling to keep it fast on large images.
+    /// Prefer the minVal/maxVal overload when those are already known.
+    static func computeHistogram(ptr: UnsafePointer<Float>, count: Int) -> [Int] {
+        let binCount = 256
+        guard count > 0 else { return [Int](repeating: 0, count: binCount) }
+
+        var minVal: Float = 0
+        var maxVal: Float = 0
+        vDSP_minv(ptr, 1, &minVal, vDSP_Length(count))
+        vDSP_maxv(ptr, 1, &maxVal, vDSP_Length(count))
+        return computeHistogram(ptr: ptr, count: count, minVal: minVal, maxVal: maxVal)
     }
 
     /// Compute a 256-bin histogram from a Float array. Delegates to the pointer overload.
@@ -418,7 +429,7 @@ struct MetricsCalculator {
 
     private static func findLocalMaximaGPU(metalBuffer: MTLBuffer,
                                             width: Int, height: Int,
-                                            threshold: Float) -> GPUDetectionResult? {
+                                            threshold: Float) async -> GPUDetectionResult? {
         guard let queue    = detectionCommandQueue,
               let pipeline = detectionPipelineState,
               let device   = detectionDevice else { return nil }
@@ -460,8 +471,10 @@ struct MetricsCalculator {
         encoder.dispatchThreads(grid, threadsPerThreadgroup: tgSize)
         encoder.endEncoding()
 
-        commandBuffer.commit()
-        commandBuffer.waitUntilCompleted()
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            commandBuffer.addCompletedHandler { _ in continuation.resume() }
+            commandBuffer.commit()
+        }
 
         // The atomic counter holds the true number of qualifying pixels found,
         // which may exceed the buffer capacity. Preserve both values separately:
@@ -778,3 +791,4 @@ struct MetricsCalculator {
         return sorted[sorted.count / 2]
     }
 }
+

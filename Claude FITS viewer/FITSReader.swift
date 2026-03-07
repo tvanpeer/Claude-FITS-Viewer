@@ -223,7 +223,11 @@ struct FITSReader {
     /// Parse a FITS file and write the float pixel data directly into a Metal shared buffer.
     /// This avoids allocating a Swift array that would later be copied into Metal.
     static func readIntoBuffer(from url: URL, device: MTLDevice) throws -> FITSBufferResult {
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        // Use direct buffered read (no .mappedIfSafe) so the OS performs sequential
+        // read() syscalls rather than lazy page faults. With multiple concurrent tasks
+        // all reading different files, page-fault-based mmap serialises on the kernel's
+        // fault handler and causes severe latency spikes. Buffered reads pipeline better.
+        let data = try Data(contentsOf: url)
         let header = try parseHeader(from: data)
 
         let pixelCount = header.width * header.height
@@ -297,14 +301,22 @@ struct FITSReader {
             vDSP_vsadd(destPtr, 1, &add, destPtr, 1, n)
         }
 
+        // Compute min/max immediately after BZERO while the float buffer is
+        // maximally warm in cache. Storing these in metadata eliminates two
+        // separate full-buffer passes later in the histogram computation.
+        var minValue: Float = 0
+        var maxValue: Float = 0
+        vDSP_minv(destPtr, 1, &minValue, n)
+        vDSP_maxv(destPtr, 1, &maxValue, n)
+
         let metadata = FITSMetadata(
             width: header.width,
             height: header.height,
             bitpix: header.bitpix,
             bzero: header.bzero,
             bscale: header.bscale,
-            minValue: 0,
-            maxValue: 0,
+            minValue: minValue,
+            maxValue: maxValue,
             headers: header.headers
         )
 
@@ -315,7 +327,7 @@ struct FITSReader {
 
     /// Parse a FITS file and return image data as a Swift array (used when Metal is unavailable)
     static func read(from url: URL) throws -> FITSImage {
-        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let data = try Data(contentsOf: url)
         let header = try parseHeader(from: data)
 
         let pixelCount = header.width * header.height
