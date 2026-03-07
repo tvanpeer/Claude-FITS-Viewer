@@ -41,6 +41,9 @@ final class AppSettings {
     var toggleModeKey: String = "g" {
         didSet { UserDefaults.standard.set(toggleModeKey, forKey: "toggleModeKey") }
     }
+    var removeKey: String = "r" {
+        didSet { UserDefaults.standard.set(removeKey, forKey: "removeKey") }
+    }
 
     // MARK: - Image Sizes
 
@@ -93,6 +96,7 @@ final class AppSettings {
         if let v = UserDefaults.standard.string(forKey: "firstImageKey") { firstImageKey = v }
         if let v = UserDefaults.standard.string(forKey: "lastImageKey")  { lastImageKey  = v }
         if let v = UserDefaults.standard.string(forKey: "toggleModeKey") { toggleModeKey = v }
+        if let v = UserDefaults.standard.string(forKey: "removeKey")     { removeKey     = v }
         // Sizes
         let display = UserDefaults.standard.integer(forKey: "maxDisplaySize")
         if display > 0 { maxDisplaySize = display }
@@ -118,6 +122,7 @@ final class AppSettings {
     var firstImageKeyEquivalent:  KeyEquivalent { keyEquivalent(for: firstImageKey,  fallback: .home) }
     var lastImageKeyEquivalent:   KeyEquivalent { keyEquivalent(for: lastImageKey,   fallback: .end) }
     var toggleModeKeyEquivalent:  KeyEquivalent { keyEquivalent(for: toggleModeKey,  fallback: KeyEquivalent("g")) }
+    var removeKeyEquivalent:      KeyEquivalent { keyEquivalent(for: removeKey,      fallback: KeyEquivalent("r")) }
 
     // MARK: - Appearance helper
 

@@ -108,6 +108,10 @@ struct ContentView: View {
             settings.isSimpleMode.toggle()
             return .handled
         }
+        .onKeyPress(settings.removeKeyEquivalent) {
+            store.removeSelected()
+            return .handled
+        }
     }
 
     private var minWindowWidth: CGFloat {

@@ -59,6 +59,9 @@ struct KeySettingsTab: View {
                 LabeledContent("Toggle Simple/Geek Mode") {
                     KeyRecorderButton(keyString: $settings.toggleModeKey)
                 }
+                LabeledContent("Remove from List") {
+                    KeyRecorderButton(keyString: $settings.removeKey)
+                }
             }
 
         }

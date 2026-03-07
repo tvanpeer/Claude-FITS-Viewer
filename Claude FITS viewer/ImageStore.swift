@@ -242,6 +242,31 @@ final class ImageStore {
 
     // MARK: - Reset
 
+    /// Removes the current selection from the list without touching files on disk.
+    /// Selects the next entry after the removed block, or the previous if at the end.
+    func removeSelected() {
+        let idsToRemove: Set<UUID> = selectedEntryIDs.count > 1
+            ? selectedEntryIDs
+            : selectedEntry.map { [$0.id] } ?? []
+        guard !idsToRemove.isEmpty else { return }
+
+        // Find a replacement selection from the current sorted order.
+        let ordered = sortedEntries
+        let firstRemovedIdx = ordered.firstIndex { idsToRemove.contains($0.id) }
+        let remaining = ordered.filter { !idsToRemove.contains($0.id) }
+        let nextEntry: ImageEntry?
+        if let idx = firstRemovedIdx {
+            nextEntry = remaining.first { ordered.firstIndex(of: $0)! >= idx } ?? remaining.last
+        } else {
+            nextEntry = remaining.first
+        }
+
+        entries.removeAll { idsToRemove.contains($0.id) }
+        selectedEntryIDs = []
+        selectedEntry = nextEntry
+        updateGroupStatistics()
+    }
+
     func reset() {
         entries = []
         selectedEntry = nil
