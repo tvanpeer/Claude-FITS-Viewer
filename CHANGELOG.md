@@ -4,10 +4,10 @@ All notable changes to Simple Claude FITS Viewer are recorded here.
 
 ---
 
-## 2026-03-07 — Eliminate redundant full-frame pixel scan in metrics
+## 2026-03-07 — Fix FWHM/Ecc/SNR missing from session chart
 
-### Performance
-- **Remove `vDSP_maxv` saturation scan** (`MetricsCalculator`): the saturation threshold (`sampleMax × 0.90`) was previously computed by calling `vDSP_maxv` over all pixels — a 2–4 ms O(n) scan for large images. `estimateBackground` already sorts a 5000-element stratified sample, so `samples[sampleCount - 1]` is the sample maximum. The return type now includes `sampleMax` and both call sites (`compute(metalBuffer:…)` and `compute(pixels:…)`) use it directly, eliminating the redundant scan with no change to accuracy.
+### Fixed
+- **Saturation filter excluded all stars** (`MetricsCalculator`): the saturation threshold was computed from a 5000-pixel stratified sample max. In sparse star fields most of the sample hits sky background, so the sample max is close to sky level — making `threshold = sampleMax × 0.90` lower than virtually all star peaks. The condition `candidate.peak < saturationThreshold` was therefore false for every candidate, leaving `fwhmValues`, `eccValues`, and `snrValues` empty. Removed the saturation filter entirely; genuinely clipped/saturated stars are already excluded by the `fwhm <= 20` guard on the Moffat fit result (flat-topped profiles produce degenerate fits or halo FWHM well above 20 px). Also reverted the `estimateBackground` return type to the simpler `(median, sigma)` tuple.
 
 ---
 
