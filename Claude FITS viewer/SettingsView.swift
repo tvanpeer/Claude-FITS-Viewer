@@ -14,11 +14,11 @@ struct SettingsView: View {
 
     var body: some View {
         TabView {
-            Tab("Keys", systemImage: "keyboard") {
-                KeySettingsTab()
+            Tab("User Interface", systemImage: "keyboard") {
+                UISettingsTab()
             }
-            Tab("Images", systemImage: "photo.stack") {
-                ImageSettingsTab()
+            Tab("Files & Folders", systemImage: "folder") {
+                FilesAndFoldersTab()
             }
         }
         .frame(width: 500, height: 620)
@@ -26,53 +26,9 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Keys tab
+// MARK: - User Interface tab
 
-struct KeySettingsTab: View {
-    @Environment(AppSettings.self) private var settings
-
-    var body: some View {
-        @Bindable var settings = settings
-
-        Form {
-            Section("Navigation") {
-                LabeledContent("First Image") {
-                    KeyRecorderButton(keyString: $settings.firstImageKey)
-                }
-                LabeledContent("Last Image") {
-                    KeyRecorderButton(keyString: $settings.lastImageKey)
-                }
-                LabeledContent("Previous Image") {
-                    KeyRecorderButton(keyString: $settings.prevImageKey)
-                }
-                LabeledContent("Next Image") {
-                    KeyRecorderButton(keyString: $settings.nextImageKey)
-                }
-                Toggle("Single key reject/undo (toggle)", isOn: $settings.useToggleReject)
-                LabeledContent(settings.useToggleReject ? "Reject / Undo" : "Reject Image") {
-                    KeyRecorderButton(keyString: $settings.rejectKey)
-                }
-                if !settings.useToggleReject {
-                    LabeledContent("Undo Rejection") {
-                        KeyRecorderButton(keyString: $settings.undoKey)
-                    }
-                }
-                LabeledContent("Toggle Simple/Geek Mode") {
-                    KeyRecorderButton(keyString: $settings.toggleModeKey)
-                }
-                LabeledContent("Remove from List") {
-                    KeyRecorderButton(keyString: $settings.removeKey)
-                }
-            }
-
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Images tab
-
-struct ImageSettingsTab: View {
+struct UISettingsTab: View {
     @Environment(AppSettings.self) private var settings
     @Environment(ImageStore.self) private var store
 
@@ -94,57 +50,92 @@ struct ImageSettingsTab: View {
     var body: some View {
         @Bindable var settings = settings
 
-        VStack(spacing: 0) {
-            Form {
-                Section("Appearance") {
-                    Picker("Theme", selection: $settings.appearanceMode) {
-                        ForEach(AppearanceMode.allCases, id: \.self) { mode in
-                            Text(mode.label).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    LabeledContent("Text Size") {
-                        DynamicTypeSizePicker(selection: $settings.dynamicTypeSize)
+        // All key bindings in one place so each recorder can reference the others for conflict detection.
+        let allKeys: [(label: String, key: Binding<String>)] = [
+            ("First Image",             $settings.firstImageKey),
+            ("Last Image",              $settings.lastImageKey),
+            ("Previous Image",          $settings.prevImageKey),
+            ("Next Image",              $settings.nextImageKey),
+            ("Reject",                  $settings.rejectKey),
+            ("Undo",                    $settings.undoKey),
+            ("Toggle Simple/Geek Mode", $settings.toggleModeKey),
+            ("Remove from List",        $settings.removeKey),
+        ]
+
+        Form {
+            Section("Navigation") {
+                LabeledContent("First Image") {
+                    KeyRecorderButton(keyString: $settings.firstImageKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "First Image" }.map(\.key))
+                }
+                LabeledContent("Last Image") {
+                    KeyRecorderButton(keyString: $settings.lastImageKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "Last Image" }.map(\.key))
+                }
+                LabeledContent("Previous Image") {
+                    KeyRecorderButton(keyString: $settings.prevImageKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "Previous Image" }.map(\.key))
+                }
+                LabeledContent("Next Image") {
+                    KeyRecorderButton(keyString: $settings.nextImageKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "Next Image" }.map(\.key))
+                }
+                Toggle("Single key reject/undo (toggle)", isOn: $settings.useToggleReject)
+                LabeledContent(settings.useToggleReject ? "Reject / Undo" : "Reject Image") {
+                    KeyRecorderButton(keyString: $settings.rejectKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "Reject" }.map(\.key))
+                }
+                if !settings.useToggleReject {
+                    LabeledContent("Undo Rejection") {
+                        KeyRecorderButton(keyString: $settings.undoKey,
+                                          conflictingKeys: allKeys.filter { $0.label != "Undo" }.map(\.key))
                     }
                 }
-
-                Section("Sizes") {
-                    LabeledContent("Max display size") {
-                        SizeField(value: $displaySize, text: $displaySizeText,
-                                  range: 512...8192, step: 128)
-                    }
-                    LabeledContent("Max thumbnail size") {
-                        SizeField(value: $thumbnailSize, text: $thumbnailSizeText,
-                                  range: 40...400, step: 20)
-                    }
+                LabeledContent("Toggle Simple/Geek Mode") {
+                    KeyRecorderButton(keyString: $settings.toggleModeKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "Toggle Simple/Geek Mode" }.map(\.key))
                 }
-
-                Section("Subfolders") {
-                    Toggle("Include files from subfolders", isOn: $settings.includeSubfolders)
-                    LabeledContent("Skip folders named:") {
-                        SubfolderExclusionField(tags: $settings.excludedSubfolderNames)
-                    }
-                    .alignmentGuide(.firstTextBaseline) { $0[.top] + 8 }
+                LabeledContent("Remove from List") {
+                    KeyRecorderButton(keyString: $settings.removeKey,
+                                      conflictingKeys: allKeys.filter { $0.label != "Remove from List" }.map(\.key))
                 }
-
             }
-            .formStyle(.grouped)
 
-            Divider()
-
-            HStack {
-                Spacer()
-                Button("Apply") { apply() }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!isDirty)
+            Section("Appearance") {
+                Picker("Theme", selection: $settings.appearanceMode) {
+                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                LabeledContent("Text Size") {
+                    DynamicTypeSizePicker(selection: $settings.dynamicTypeSize)
+                }
             }
-            .padding()
+
+            Section("Sizes") {
+                LabeledContent("Max display size") {
+                    SizeField(value: $displaySize, text: $displaySizeText,
+                              range: 512...8192, step: 128)
+                }
+                LabeledContent("Max thumbnail size") {
+                    SizeField(value: $thumbnailSize, text: $thumbnailSizeText,
+                              range: 40...400, step: 20)
+                }
+                HStack {
+                    Spacer()
+                    Button("Apply") { apply() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!isDirty)
+                }
+            }
         }
+        .formStyle(.grouped)
         .onAppear {
-            displaySize        = settings.maxDisplaySize
-            thumbnailSize      = settings.maxThumbnailSize
-            displaySizeText    = String(settings.maxDisplaySize)
-            thumbnailSizeText  = String(settings.maxThumbnailSize)
+            displaySize       = settings.maxDisplaySize
+            thumbnailSize     = settings.maxThumbnailSize
+            displaySizeText   = String(settings.maxDisplaySize)
+            thumbnailSizeText = String(settings.maxThumbnailSize)
         }
     }
 
@@ -189,6 +180,27 @@ struct ImageSettingsTab: View {
         frame = frame.intersection(visible)
 
         window.setFrame(frame, display: true, animate: true)
+    }
+}
+
+// MARK: - Files & Folders tab
+
+struct FilesAndFoldersTab: View {
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
+        @Bindable var settings = settings
+
+        Form {
+            Section("Subfolders") {
+                Toggle("Include files from subfolders", isOn: $settings.includeSubfolders)
+                LabeledContent("Skip folders named:") {
+                    SubfolderExclusionField(tags: $settings.excludedSubfolderNames)
+                }
+                .alignmentGuide(.firstTextBaseline) { $0[.top] + 8 }
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 

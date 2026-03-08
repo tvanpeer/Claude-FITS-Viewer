@@ -91,8 +91,12 @@ private struct KeyRecorderRepresentable: NSViewRepresentable {
 ///
 /// When clicked the button enters recording mode showing "Press a key…".
 /// Pressing any valid key captures it; pressing Escape cancels without changes.
+///
+/// Pass `conflictingKeys` to automatically clear any other binding that already
+/// holds the newly assigned key, preventing duplicate shortcuts.
 struct KeyRecorderButton: View {
     @Binding var keyString: String
+    var conflictingKeys: [Binding<String>] = []
 
     @State private var isRecording = false
 
@@ -111,8 +115,12 @@ struct KeyRecorderButton: View {
                 // Hidden recorder view — auto-becomes first responder
                 KeyRecorderRepresentable(
                     onKeyCapture: { key in
-                        keyString = key
-                        isRecording = false
+                        if conflictingKeys.contains(where: { $0.wrappedValue == key }) {
+                            NSSound.beep()
+                        } else {
+                            keyString = key
+                            isRecording = false
+                        }
                     },
                     onCancel: {
                         isRecording = false

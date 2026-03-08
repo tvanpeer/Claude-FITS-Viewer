@@ -635,6 +635,7 @@ final class ImageStore {
                                                excludedNames: settings.excludedSubfolderNames))
         accessoryView.frame = NSRect(x: 0, y: 0, width: 480, height: accessoryHeight)
         panel.accessoryView = accessoryView
+        panel.isAccessoryViewDisclosed = true
 
         guard panel.runModal() == .OK, let folderURL = panel.url else { return }
 
