@@ -7,6 +7,7 @@
 
 import Foundation
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Thumbnail sort order
@@ -89,12 +90,32 @@ final class ImageEntry: Identifiable {
     /// Canonical filter group derived from the raw FILTER header value.
     var filterGroup: FilterGroup { FilterGroup.normalise(filterName) }
 
+    /// Relative path from the opened root folder to this file's parent directory.
+    /// Empty string means the file sits directly in the opened root folder.
+    /// Example: "Ha" for `root/Ha/frame.fits`, "Lights/Ha" for deeper nesting.
+    var subfolderPath: String = ""
+
     init(url: URL, directoryBookmark: Data? = nil) {
         self.url = url
         self.originalURL = url
         self.fileName = url.lastPathComponent
         self.directoryBookmark = directoryBookmark
     }
+}
+
+// MARK: - FolderGroup
+
+/// One subfolder's worth of entries, pre-grouped by filter for sidebar rendering.
+struct FolderGroup: Identifiable {
+    /// Relative path from the opened root — empty string for root-level files.
+    let folderPath: String
+    /// Short name shown in section headers and folder pills.
+    let folderDisplayName: String
+    /// Entries split by their canonical filter group, in FilterGroup canonical order.
+    let filterGroups: [(FilterGroup, [ImageEntry])]
+
+    var id: String { folderPath }
+    var totalCount: Int { filterGroups.reduce(0) { $0 + $1.1.count } }
 }
 
 // MARK: - ImageStore
@@ -125,6 +146,21 @@ final class ImageStore {
     /// The filter group currently highlighted in the sidebar filter strip.
     /// `nil` means "show all groups". Cleared on reset.
     var sidebarFilterGroup: FilterGroup? = nil
+
+    // MARK: - Folder grouping
+
+    /// Display name of the root folder most recently opened via the panel or drag-drop.
+    /// Shown as the section header for root-level files in subfolder mode.
+    private(set) var rootFolderName: String = ""
+
+    /// Sorted list of unique subfolder paths present across all loaded entries.
+    /// Empty string ("") represents root-level files. Updated at batch boundaries.
+    private(set) var activeFolderPaths: [String] = []
+
+    /// Entries grouped first by subfolder, then by filter, ready for sidebar rendering.
+    /// Stored (not computed) to avoid O(n) re-derivation on every SwiftUI render pass.
+    /// Updated only at batch boundaries alongside `groupStatistics`.
+    private(set) var groupedByFolderAndFilter: [FolderGroup] = []
 
     // MARK: - Filter grouping
 
@@ -190,6 +226,7 @@ final class ImageStore {
                 }
             }
         }
+        updateGroupedByFolderAndFilter()
     }
 
     /// `sortedEntries` filtered to the sidebar selection, or all entries when no
@@ -238,6 +275,29 @@ final class ImageStore {
         updateCachedSort()
     }
 
+    private func updateGroupedByFolderAndFilter() {
+        let byFolder = Dictionary(grouping: sortedEntries) { $0.subfolderPath }
+        let allPaths = byFolder.keys.sorted { lhs, rhs in
+            if lhs.isEmpty { return true }   // root-level files sort first
+            if rhs.isEmpty { return false }
+            return lhs.localizedStandardCompare(rhs) == .orderedAscending
+        }
+        activeFolderPaths = allPaths
+
+        groupedByFolderAndFilter = allPaths.compactMap { path in
+            guard let pathEntries = byFolder[path], !pathEntries.isEmpty else { return nil }
+            let displayName = path.isEmpty ? rootFolderName : path
+            let byFilter = Dictionary(grouping: pathEntries) { $0.filterGroup }
+            let filterGroups: [(FilterGroup, [ImageEntry])] = FilterGroup.allCases.compactMap { group in
+                guard let groupEntries = byFilter[group], !groupEntries.isEmpty else { return nil }
+                return (group, groupEntries)
+            }
+            return FolderGroup(folderPath: path,
+                               folderDisplayName: displayName,
+                               filterGroups: filterGroups)
+        }
+    }
+
     var sortedEntries: [ImageEntry] { cachedSortedEntries }
 
     // MARK: - Reset
@@ -278,6 +338,9 @@ final class ImageStore {
         groupStatistics = [:]
         activeFilterGroups = []
         cachedSortedEntries = []
+        rootFolderName = ""
+        activeFolderPaths = []
+        groupedByFolderAndFilter = []
     }
 
     // MARK: - Navigation
@@ -506,6 +569,54 @@ final class ImageStore {
         try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    // MARK: - FITS file discovery
+
+    /// Recursively collects FITS file URLs under `folder`, pairing each with its
+    /// relative subfolder path from `relativePath`.
+    ///
+    /// - Parameters:
+    ///   - folder: The directory to scan.
+    ///   - relativePath: Prefix to prepend (empty for the root call).
+    ///   - excludedNames: Lowercased subfolder names to skip entirely.
+    ///   - includeSubfolders: When false, only the immediate directory is scanned.
+    nonisolated static func collectFITSURLs(
+        in folder: URL,
+        relativePath: String,
+        excludedNames: Set<String>,
+        includeSubfolders: Bool
+    ) -> [(url: URL, subfolderPath: String)] {
+        let fitsExtensions: Set<String> = ["fits", "fit", "fts"]
+        guard let contents = try? FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var results: [(URL, String)] = []
+        let sorted = contents.sorted {
+            $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
+        }
+
+        for item in sorted {
+            let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            if isDir {
+                guard includeSubfolders else { continue }
+                let name = item.lastPathComponent
+                // Always skip REJECTED — that's where this app moves rejected files.
+                // Also skip any user-configured exclusion names (case-insensitive).
+                guard name.caseInsensitiveCompare("REJECTED") != .orderedSame,
+                      !excludedNames.contains(name.lowercased()) else { continue }
+                let childPath = relativePath.isEmpty ? name : "\(relativePath)/\(name)"
+                results += collectFITSURLs(in: item, relativePath: childPath,
+                                           excludedNames: excludedNames,
+                                           includeSubfolders: true)
+            } else if fitsExtensions.contains(item.pathExtension.lowercased()) {
+                results.append((item, relativePath))
+            }
+        }
+        return results
+    }
+
     // MARK: - File Panels
 
     func openFolderPanel(settings: AppSettings) {
@@ -516,31 +627,37 @@ final class ImageStore {
         panel.message = "Select a folder containing FITS files"
         panel.prompt = "Open"
 
+        // Accessory view: pre-filled from settings but does NOT write back on change.
+        let options = FolderPanelOptions(settings.includeSubfolders)
+        let accessoryHeight: CGFloat = settings.excludedSubfolderNames.isEmpty ? 44 : 60
+        let accessoryView = NSHostingView(
+            rootView: FolderPanelAccessoryView(options: options,
+                                               excludedNames: settings.excludedSubfolderNames))
+        accessoryView.frame = NSRect(x: 0, y: 0, width: 480, height: accessoryHeight)
+        panel.accessoryView = accessoryView
+
         guard panel.runModal() == .OK, let folderURL = panel.url else { return }
+
+        // Use the panel's checkbox value — intentionally NOT written back to settings.
+        let includeSubfolders = options.includeSubfolders
+        let excludedSet = Set(settings.excludedSubfolderNames.map { $0.lowercased() })
 
         let didAccess = folderURL.startAccessingSecurityScopedResource()
         let dirBookmark = try? folderURL.bookmarkData(
             options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
 
-        let fitsExtensions: Set<String> = ["fits", "fit", "fts"]
-        let fitsURLs: [URL]
-        if let contents = try? FileManager.default.contentsOfDirectory(
-            at: folderURL, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-            fitsURLs = contents
-                .filter { fitsExtensions.contains($0.pathExtension.lowercased()) }
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        } else {
-            fitsURLs = []
-        }
-
+        let collected = Self.collectFITSURLs(in: folderURL, relativePath: "",
+                                             excludedNames: excludedSet,
+                                             includeSubfolders: includeSubfolders)
         if didAccess { folderURL.stopAccessingSecurityScopedResource() }
 
-        guard !fitsURLs.isEmpty else {
+        guard !collected.isEmpty else {
             errorMessage = "No FITS files found in the selected folder."
             return
         }
 
-        openFiles(fitsURLs, directoryBookmark: dirBookmark,
+        rootFolderName = folderURL.lastPathComponent
+        openFiles(collected, directoryBookmark: dirBookmark,
                   maxDisplaySize: settings.maxDisplaySize,
                   maxThumbnailSize: settings.maxThumbnailSize,
                   metricsConfig: settings.effectiveMetricsConfig)
@@ -548,12 +665,14 @@ final class ImageStore {
 
     /// Opens dropped URLs (folders and/or individual FITS files) from a drag & drop operation.
     ///
-    /// Folders are expanded to their immediate FITS contents. Individual FITS files are used
-    /// directly. Files from different directories are all added to the current session.
+    /// Folders are scanned according to `settings.includeSubfolders`. Individual FITS files
+    /// are always added directly. Files from different directories are merged into the session.
     func openDroppedItems(_ urls: [URL], settings: AppSettings) {
         let fitsExtensions: Set<String> = ["fits", "fit", "fts"]
-        var fitsURLs: [URL] = []
+        let excludedSet = Set(settings.excludedSubfolderNames.map { $0.lowercased() })
+        var collected: [(url: URL, subfolderPath: String)] = []
         var dirBookmark: Data?
+        var singleDroppedFolderName: String?
 
         for url in urls {
             var isDir: ObjCBool = false
@@ -561,37 +680,35 @@ final class ImageStore {
                 atPath: url.path(percentEncoded: false), isDirectory: &isDir) else { continue }
 
             if isDir.boolValue {
-                // Dropped folder: build a security-scoped bookmark and list FITS files.
                 if dirBookmark == nil {
                     dirBookmark = try? url.bookmarkData(
                         options: .withSecurityScope,
                         includingResourceValuesForKeys: nil,
                         relativeTo: nil)
                 }
-                if let contents = try? FileManager.default.contentsOfDirectory(
-                    at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) {
-                    let fits = contents
-                        .filter { fitsExtensions.contains($0.pathExtension.lowercased()) }
-                        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-                    fitsURLs.append(contentsOf: fits)
-                }
+                let folderCollected = Self.collectFITSURLs(in: url, relativePath: "",
+                                                           excludedNames: excludedSet,
+                                                           includeSubfolders: settings.includeSubfolders)
+                collected.append(contentsOf: folderCollected)
+                if urls.count == 1 { singleDroppedFolderName = url.lastPathComponent }
             } else if fitsExtensions.contains(url.pathExtension.lowercased()) {
-                fitsURLs.append(url)
+                collected.append((url, ""))
             }
         }
 
-        guard !fitsURLs.isEmpty else { return }
+        guard !collected.isEmpty else { return }
 
-        // For individual dropped files, try to bookmark the parent directory.
-        if dirBookmark == nil, let first = fitsURLs.first {
-            let parent = first.deletingLastPathComponent()
+        if dirBookmark == nil, let first = collected.first {
+            let parent = first.url.deletingLastPathComponent()
             dirBookmark = try? parent.bookmarkData(
                 options: .withSecurityScope,
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil)
         }
 
-        openFiles(fitsURLs, directoryBookmark: dirBookmark,
+        if let name = singleDroppedFolderName { rootFolderName = name }
+
+        openFiles(collected, directoryBookmark: dirBookmark,
                   maxDisplaySize: settings.maxDisplaySize,
                   maxThumbnailSize: settings.maxThumbnailSize,
                   metricsConfig: settings.effectiveMetricsConfig)
@@ -632,14 +749,27 @@ final class ImageStore {
 
     // MARK: - Loading
 
+    /// Convenience wrapper for callers that provide a flat list without subfolder info.
     func openFiles(_ urls: [URL], directoryBookmark: Data? = nil,
+                   maxDisplaySize: Int = 1024, maxThumbnailSize: Int = 120,
+                   metricsConfig: MetricsConfig = MetricsConfig()) {
+        openFiles(urls.map { (url: $0, subfolderPath: "") },
+                  directoryBookmark: directoryBookmark,
+                  maxDisplaySize: maxDisplaySize,
+                  maxThumbnailSize: maxThumbnailSize,
+                  metricsConfig: metricsConfig)
+    }
+
+    func openFiles(_ urlsWithPaths: [(url: URL, subfolderPath: String)],
+                   directoryBookmark: Data? = nil,
                    maxDisplaySize: Int = 1024, maxThumbnailSize: Int = 120,
                    metricsConfig: MetricsConfig = MetricsConfig()) {
         let selectFirst = (selectedEntry == nil)
 
         var newEntries: [ImageEntry] = []
         var skippedFloat: [String] = []
-        for url in urls {
+        for item in urlsWithPaths {
+            let url = item.url
             guard ["fits", "fit", "fts"].contains(url.pathExtension.lowercased()) else { continue }
             // Skip float FITS files (BITPIX < 0) before creating an entry so they
             // never appear in the sidebar even briefly.
@@ -648,6 +778,7 @@ final class ImageStore {
                 continue
             }
             let entry = ImageEntry(url: url, directoryBookmark: directoryBookmark)
+            entry.subfolderPath = item.subfolderPath
             entries.append(entry)
             newEntries.append(entry)
         }

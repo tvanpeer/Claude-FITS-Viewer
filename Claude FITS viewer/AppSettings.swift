@@ -84,6 +84,18 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(appearanceMode.rawValue, forKey: "appearanceMode") }
     }
 
+    // MARK: - Subfolder Settings
+
+    /// When true, opening a folder also recursively loads FITS files from subfolders.
+    var includeSubfolders: Bool = false {
+        didSet { UserDefaults.standard.set(includeSubfolders, forKey: "includeSubfolders") }
+    }
+
+    /// Subfolder names (case-insensitive, exact match) that are never recursed into.
+    var excludedSubfolderNames: [String] = ["FLAT", "DARK", "BIAS", "CALIB"] {
+        didSet { UserDefaults.standard.set(excludedSubfolderNames, forKey: "excludedSubfolderNames") }
+    }
+
     // MARK: - Init
 
     init() {
@@ -111,6 +123,8 @@ final class AppSettings {
         if let v = UserDefaults.standard.object(forKey: "isSimpleMode")       as? Bool { isSimpleMode       = v }
         if let raw = UserDefaults.standard.string(forKey: "appearanceMode"),
            let mode = AppearanceMode(rawValue: raw) { appearanceMode = mode }
+        if let v = UserDefaults.standard.object(forKey: "includeSubfolders")  as? Bool { includeSubfolders  = v }
+        if let v = UserDefaults.standard.stringArray(forKey: "excludedSubfolderNames") { excludedSubfolderNames = v }
     }
 
     // MARK: - Key Equivalents: navigation & actions

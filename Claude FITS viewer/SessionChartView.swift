@@ -65,12 +65,25 @@ struct SessionChartView: View {
     @State private var pendingReject: [ImageEntry] = []
     @State private var showRejectConfirm = false
 
+    /// Subfolder paths whose entries are shown in the chart.
+    /// Empty set means "All" — no folder filtering applied.
+    @State private var selectedFolderPaths: Set<String> = []
+
     // MARK: - Derived data
 
+    /// Entries shown in the chart strip, filtered by `selectedFolderPaths`.
+    /// When no folders are selected (or only one folder exists), all entries are returned.
+    private var chartEntries: [ImageEntry] {
+        guard !selectedFolderPaths.isEmpty, store.activeFolderPaths.count > 1 else {
+            return store.entries
+        }
+        return store.entries.filter { selectedFolderPaths.contains($0.subfolderPath) }
+    }
+
     /// All frames that have at least a partial metric value for the active metric,
-    /// paired with their stable load index (position in entries array).
+    /// paired with their 0-based position in `chartEntries`.
     private var chartPoints: [(index: Int, entry: ImageEntry, value: Double)] {
-        store.entries.enumerated().compactMap { index, entry in
+        chartEntries.enumerated().compactMap { index, entry in
             guard let value = selectedMetric.value(for: entry.metrics) else { return nil }
             return (index: index, entry: entry, value: value)
         }
@@ -79,7 +92,7 @@ struct SessionChartView: View {
     /// Per-group median of the active metric, used for threshold lines.
     /// Groups with fewer than two data points are skipped.
     private var groupMedians: [(group: FilterGroup, median: Double)] {
-        let grouped = Dictionary(grouping: store.entries) { $0.filterGroup }
+        let grouped = Dictionary(grouping: chartEntries) { $0.filterGroup }
         return FilterGroup.allCases.compactMap { group in
             let values = (grouped[group] ?? [])
                 .compactMap { selectedMetric.value(for: $0.metrics) }
@@ -94,6 +107,10 @@ struct SessionChartView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if store.activeFolderPaths.count > 1 {
+                Divider()
+                folderStrip
+            }
             Divider()
             if chartPoints.isEmpty {
                 placeholder
@@ -102,6 +119,9 @@ struct SessionChartView: View {
             }
         }
         .background(.background)
+        .onChange(of: store.activeFolderPaths) { _, newPaths in
+            selectedFolderPaths = selectedFolderPaths.filter { newPaths.contains($0) }
+        }
         .alert("Reject \(pendingReject.count) Frame\(pendingReject.count == 1 ? "" : "s")?",
                isPresented: $showRejectConfirm) {
             Button("Reject", role: .destructive) {
@@ -142,6 +162,35 @@ struct SessionChartView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 5)
+    }
+
+    // MARK: - Folder strip
+
+    private var folderStrip: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 4) {
+                FilterChip(label: "All", color: .accentColor,
+                           isSelected: selectedFolderPaths.isEmpty) {
+                    selectedFolderPaths = []
+                }
+                ForEach(store.activeFolderPaths, id: \.self) { path in
+                    let displayName = store.groupedByFolderAndFilter
+                        .first { $0.folderPath == path }?.folderDisplayName ?? path
+                    FilterChip(label: displayName.isEmpty ? "Root" : displayName,
+                               color: .accentColor,
+                               isSelected: selectedFolderPaths.contains(path)) {
+                        if selectedFolderPaths.contains(path) {
+                            selectedFolderPaths.remove(path)
+                        } else {
+                            selectedFolderPaths.insert(path)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 4)
+        }
+        .scrollIndicators(.hidden)
     }
 
     // MARK: - Placeholder
@@ -261,11 +310,12 @@ struct SessionChartView: View {
     private func handleTap(at location: CGPoint, proxy: ChartProxy, geo: GeometryProxy) {
         guard let plotFrame = proxy.plotFrame else { return }
         let xInPlot = location.x - geo[plotFrame].minX
-        // Chart X axis is 1-based frame numbers; subtract 1 for the entries array index
+        // Chart X axis is 1-based frame numbers; subtract 1 for the chartEntries index
         guard let frameNumber: Int = proxy.value(atX: xInPlot, as: Int.self) else { return }
         let index = frameNumber - 1
-        guard store.entries.indices.contains(index) else { return }
-        store.selectedEntry = store.entries[index]
+        let entries = chartEntries
+        guard entries.indices.contains(index) else { return }
+        store.selectedEntry = entries[index]
     }
 
     private func handleDragEnd(start: CGFloat, end: CGFloat,
@@ -278,12 +328,12 @@ struct SessionChartView: View {
         guard let startFrame: Int = proxy.value(atX: minX, as: Int.self),
               let endFrame:   Int = proxy.value(atX: maxX, as: Int.self) else { return }
 
-        // Convert 1-based frame numbers to 0-based array indices
-        let lo = max(0,                       min(startFrame, endFrame) - 1)
-        let hi = min(store.entries.count - 1, max(startFrame, endFrame) - 1)
+        let entries = chartEntries
+        let lo = max(0,                min(startFrame, endFrame) - 1)
+        let hi = min(entries.count - 1, max(startFrame, endFrame) - 1)
         guard lo <= hi else { return }
 
-        let candidates = Array(store.entries[lo...hi]).filter { !$0.isRejected }
+        let candidates = Array(entries[lo...hi]).filter { !$0.isRejected }
         guard !candidates.isEmpty else { return }
         pendingReject    = candidates
         showRejectConfirm = true

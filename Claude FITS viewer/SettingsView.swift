@@ -21,7 +21,7 @@ struct SettingsView: View {
                 ImageSettingsTab()
             }
         }
-        .frame(width: 500, height: 540)
+        .frame(width: 500, height: 620)
     }
 }
 
@@ -115,6 +115,14 @@ struct ImageSettingsTab: View {
                     }
                 }
 
+                Section("Subfolders") {
+                    Toggle("Include files from subfolders", isOn: $settings.includeSubfolders)
+                    LabeledContent("Skip folders named:") {
+                        SubfolderExclusionField(tags: $settings.excludedSubfolderNames)
+                    }
+                    .alignmentGuide(.firstTextBaseline) { $0[.top] + 8 }
+                }
+
             }
             .formStyle(.grouped)
 
@@ -177,6 +185,59 @@ struct ImageSettingsTab: View {
         frame = frame.intersection(visible)
 
         window.setFrame(frame, display: true, animate: true)
+    }
+}
+
+// MARK: - Subfolder exclusion tag field
+
+/// A tag-style input that lets the user add/remove subfolder names to exclude.
+private struct SubfolderExclusionField: View {
+    @Binding var tags: [String]
+    @State private var inputText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !tags.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 4) {
+                        ForEach(tags, id: \.self) { tag in
+                            HStack(spacing: 3) {
+                                Text(tag)
+                                    .font(.caption)
+                                Button("Remove \(tag)", systemImage: "xmark") {
+                                    tags.removeAll { $0 == tag }
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.plain)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(.quaternary)
+                            .clipShape(.rect(cornerRadius: 4))
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+            TextField("Type name and press Return to add", text: $inputText)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { addTag() }
+                .frame(maxWidth: 260)
+            Text("Case-insensitive, exact folder name match.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    private func addTag() {
+        let trimmed = inputText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        if !tags.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+            tags.append(trimmed.uppercased())
+        }
+        inputText = ""
     }
 }
 

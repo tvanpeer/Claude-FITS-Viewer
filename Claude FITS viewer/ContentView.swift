@@ -163,12 +163,24 @@ struct ThumbnailSidebar: View {
     /// The last entry that received a plain or cmd+click — used as the anchor for shift+click range.
     @State private var lastClickedID: UUID? = nil
 
+    /// Folder paths whose thumbnail rows are currently hidden.
+    @State private var collapsedFolderPaths: Set<String> = []
+
     /// Ordered list of entries currently rendered in the sidebar, used for shift+click range.
     private var visibleEntries: [ImageEntry] {
         if settings.isSimpleMode { return store.entries }
-        if store.sidebarFilterGroup != nil || store.activeFilterGroups.count <= 1 {
+        // A filter is selected, or there's only one folder and one filter: show flat filtered list.
+        if store.sidebarFilterGroup != nil
+            || (store.activeFilterGroups.count <= 1 && store.activeFolderPaths.count <= 1) {
             return store.filteredSortedEntries
         }
+        // Multi-folder mode: return entries in folder → filter section order, skipping collapsed.
+        if store.activeFolderPaths.count > 1 {
+            return store.groupedByFolderAndFilter
+                .filter { !collapsedFolderPaths.contains($0.folderPath) }
+                .flatMap { folder in folder.filterGroups.flatMap { $0.1 } }
+        }
+        // Single folder, multi-filter: existing filter-grouped order.
         return store.groupedSortedEntries.flatMap { $0.entries }
     }
 
@@ -216,13 +228,46 @@ struct ThumbnailSidebar: View {
                             ForEach(store.entries) { entry in
                                 thumbnailButton(for: entry)
                             }
-                        } else if store.sidebarFilterGroup != nil || store.activeFilterGroups.count <= 1 {
-                            // Flat list: a specific filter is selected, or only one group exists
+                        } else if store.sidebarFilterGroup != nil
+                            || (store.activeFilterGroups.count <= 1 && store.activeFolderPaths.count <= 1) {
+                            // Flat list: a filter is selected, or there's only one folder+filter
                             ForEach(store.filteredSortedEntries) { entry in
                                 thumbnailButton(for: entry)
                             }
+                        } else if store.activeFolderPaths.count > 1 {
+                            // Folder mode: one section per subfolder, with optional filter sub-headers
+                            ForEach(store.groupedByFolderAndFilter) { folderGroup in
+                                let isCollapsed = collapsedFolderPaths.contains(folderGroup.folderPath)
+                                Section {
+                                    if !isCollapsed {
+                                        if folderGroup.filterGroups.count > 1 {
+                                            ForEach(folderGroup.filterGroups, id: \.0) { group, groupEntries in
+                                                FolderFilterSubHeader(group: group, count: groupEntries.count)
+                                                ForEach(groupEntries) { entry in
+                                                    thumbnailButton(for: entry)
+                                                }
+                                            }
+                                        } else {
+                                            ForEach(folderGroup.filterGroups.first?.1 ?? []) { entry in
+                                                thumbnailButton(for: entry)
+                                            }
+                                        }
+                                    }
+                                } header: {
+                                    FolderSectionHeader(
+                                        folderGroup: folderGroup,
+                                        isCollapsed: isCollapsed
+                                    ) {
+                                        if isCollapsed {
+                                            collapsedFolderPaths.remove(folderGroup.folderPath)
+                                        } else {
+                                            collapsedFolderPaths.insert(folderGroup.folderPath)
+                                        }
+                                    }
+                                }
+                            }
                         } else {
-                            // Grouped list: one section per filter group
+                            // Single folder, multiple filters: group by filter
                             ForEach(store.groupedSortedEntries, id: \.group) { group, entries in
                                 Section {
                                     ForEach(entries) { entry in
@@ -381,6 +426,64 @@ struct FilterGroupHeader: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
         .background(.regularMaterial)
+    }
+}
+
+// MARK: - Folder section header
+
+struct FolderSectionHeader: View {
+    let folderGroup: FolderGroup
+    let isCollapsed: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 5) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                    .animation(.easeInOut(duration: 0.15), value: isCollapsed)
+                Image(systemName: "folder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(folderGroup.folderDisplayName)
+                    .font(.caption.bold())
+                Text("\(folderGroup.totalCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(.regularMaterial)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Inline filter sub-header used inside a folder section when a single folder
+/// contains images from more than one filter group.
+struct FolderFilterSubHeader: View {
+    let group: FilterGroup
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(group.color)
+                .frame(width: 6, height: 6)
+            Text(group.rawValue)
+                .font(.caption2.bold())
+            Text("\(count)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 12)
+        .padding(.vertical, 3)
+        .background(.quinary)
     }
 }
 
