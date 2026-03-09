@@ -1047,12 +1047,10 @@ final class ImageStore {
                         entry.histogram    = fast.histogram
                         entry.headers      = fast.headers
                         entry.bayerClips   = fast.bayerClips
-                        // Pre-populate the appropriate render cache so the first toggle is instant.
-                        if fast.bayerClips != nil {
-                            // Loaded with debayer ON — this is the colour render (clips available).
-                            // Colour cache is populated by normalizeBayerStretch after the batch.
-                        } else if BayerPattern.parse(from: fast.headers) != nil {
-                            // Loaded with debayer OFF — this is the greyscale render.
+                        // Pre-populate the greyscale cache so any toggle to grey is instant.
+                        // loadFast always produces a greyscale render regardless of debayerColorImages,
+                        // so this is free — the image is already computed and on screen.
+                        if BayerPattern.parse(from: fast.headers) != nil {
                             entry.cachedGreyscaleDisplay = fast.display
                             entry.cachedGreyscaleThumb   = fast.thumb
                         }
@@ -1120,6 +1118,8 @@ final class ImageStore {
             defer { for d in accessedDirs { d.stopAccessingSecurityScopedResource() } }
 
             if debayer {
+                recolouringMessage = "Rendering colour…"
+                defer { recolouringMessage = nil }
                 // Compute clip bounds for any entry loaded before debayer was enabled.
                 let concurrency = max(4, ProcessInfo.processInfo.activeProcessorCount - 2)
                 await withTaskGroup(of: Void.self) { group in

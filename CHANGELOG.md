@@ -4,6 +4,14 @@ All notable changes to Simple Claude FITS Viewer are recorded here.
 
 ---
 
+## 2026-03-09 — Colour toggle UX improvements (v1.11.2)
+
+### Fixed
+- **Instant grey on first toggle back**: when starting in colour mode, the initial greyscale render (always computed first during load) is now cached in `cachedGreyscaleDisplay`. Toggling back to grey after the initial grey→colour startup cycle is instant with no file re-reads.
+- **Immediate status message**: "Rendering colour…" now appears instantly when pressing 'c', before the clip computation phase begins, instead of only after ~10 seconds of silent work on large batches.
+
+---
+
 ## 2026-03-09 — View menu fixes + colour toggle cache
 
 ### Added
