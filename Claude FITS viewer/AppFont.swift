@@ -1,6 +1,6 @@
 //
 //  AppFont.swift
-//  Simple Claude fits viewer
+//  FITS Blaster
 //
 //  Custom font scaling for macOS, where DynamicTypeSize does not scale
 //  semantic font styles (.caption, .body, etc.) at the platform level.

@@ -1,6 +1,6 @@
 //
 //  InspectorView.swift
-//  Simple Claude fits viewer
+//  FITS Blaster
 //
 //  Created by Tom van Peer on 01/03/2026.
 //

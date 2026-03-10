@@ -1,6 +1,6 @@
 //
 //  SessionChartView.swift
-//  Simple Claude fits viewer
+//  FITS Blaster
 //
 
 import SwiftUI

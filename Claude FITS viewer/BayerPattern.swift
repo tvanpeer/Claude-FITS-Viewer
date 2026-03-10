@@ -1,6 +1,6 @@
 //
 //  BayerPattern.swift
-//  Simple Claude fits viewer
+//  FITS Blaster
 //
 
 import Foundation

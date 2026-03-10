@@ -1,6 +1,6 @@
 //
-//  Simple_Claude_fits_viewerApp.swift
-//  Simple Claude fits viewer
+//  FitsBlasterApp.swift
+//  FITS Blaster
 //
 //  Created by Tom van Peer on 28/02/2026.
 //
@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - App
 
 @main
-struct Simple_Claude_fits_viewerApp: App {
+struct FitsBlasterApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var settings = AppSettings()
     @State private var store = ImageStore()
