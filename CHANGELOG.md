@@ -4,6 +4,15 @@ All notable changes to Simple Claude FITS Viewer are recorded here.
 
 ---
 
+## 2026-03-11 — Fix duplicate entries and subfolder name collisions (v1.11.4)
+
+### Fixed
+- **Duplicate entries**: opening the same folder twice no longer adds duplicate frames — files already in the session are silently skipped.
+- **Same-directory warning**: opening an already-loaded folder now shows an alert ("Folder Already Loaded") before proceeding, so the user can cancel if it was accidental.
+- **Subfolder name collision**: loading two root folders that both contain a subfolder named e.g. `lights` no longer merges them into one section. Each is now tracked by its fully qualified path (`Session A / lights`, `Session B / lights`) and shown as a separate section in the sidebar and chart.
+
+---
+
 ## 2026-03-09 — Fix keyboard shortcuts not working after sidebar click (v1.11.3)
 
 ### Fixed
