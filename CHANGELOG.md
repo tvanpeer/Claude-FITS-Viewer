@@ -4,6 +4,20 @@ All notable changes to FITS Blaster are recorded here.
 
 ---
 
+## 2026-03-14 — Rename to FITS Blaster, FWHM investigation (v1.11.6)
+
+### Changed
+- Renamed source folder and all remaining references from "Claude FITS viewer" to "FITS Blaster"
+- Updated archive name, README, CHANGELOG header, and Metal file header
+
+### Added
+- `FWHM-comparison.md` documenting FWHM methodology and comparison against PixInsight, Siril, and AstroPixelProcessor
+
+### Fixed
+- Reverted erroneous ÷√2 FWHM scale factor for Bayer images; empirical testing confirmed no correction is needed — values agree with PixInsight within ±10% for both narrowband and broadband OSC images
+
+---
+
 ## 2026-03-11 — Session chart layout fixes (v1.11.5)
 
 ### Fixed
